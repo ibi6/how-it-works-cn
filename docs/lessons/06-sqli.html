@@ -1,0 +1,107 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>参数化查询为什么能防 SQL 注入 · 图解互联网基本功</title><meta name="description" content="不讲攻击套路，只讲一个原理：让「代码」和「数据」永远分开。全部在浏览器里用假数据库模拟。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 6 课</span><h1>参数化查询为什么能防 SQL 注入</h1><p class="lead">不讲攻击套路，只讲一个原理：让「代码」和「数据」永远分开。全部在浏览器里用假数据库模拟。</p>
+<div class="tldr"><b>一句话结论</b>SQL 注入的根源是把用户输入<b>拼进了 SQL 文本</b>，于是数据有机会被数据库当成「代码」解析；参数化查询先把 SQL 的结构定死，再把输入当作纯「数据」单独传入，数据再怎么奇怪也不会变成代码。</div>
+<div class="note"><b>本课范围</b>：只使用页面内置的假数据库和一个约 60 行的迷你查询器，不连接任何真实系统，不提供攻击清单；目的是让你看懂「为什么安全」并写出正确的代码。</div>
+<h2>🧪 动手试试：同样的输入，两种写法</h2>
+<div class="card lab">
+<p>假数据库表 <code>users</code>（全是虚构数据）：</p>
+<pre><code>id | name   | role  | pass
+1  | alice  | admin | pw-a1
+2  | bob    | user  | pw-b2
+3  | O'Brien| user  | pw-c3</code></pre>
+<div class="ctl"><label>用户名</label><input type="text" id="n" value="alice"><label>密码</label><input type="text" id="p" value="pw-a1"></div>
+<div class="ctl"><label>快速填入：</label><button data-n="alice" data-p="pw-a1">正常登录</button><button data-n="O'Brien" data-p="pw-c3">名字里有单引号（合法输入）</button><button data-n="x' OR '1'='1' -- " data-p="随便">教科书示例：条件被改写</button><button class="primary" id="run">执行两种写法 ▶</button></div>
+<div class="grid g2">
+<div class="card" style="border-color:var(--bad)"><h3>❌ 字符串拼接</h3><pre><code>sql = "SELECT id,name,role FROM users
+  WHERE name = '" + name + "' AND pass = '" + pass + "'"</code></pre><b>最终发给数据库的文本：</b><pre><code id="s1">—</code></pre><b>数据库「看到」的词法单元：</b><div id="t1" style="line-height:2.2"></div><div id="r1"></div></div>
+<div class="card" style="border-color:var(--ok)"><h3>✅ 参数化查询</h3><pre><code>sql = "SELECT id,name,role FROM users
+  WHERE name = ? AND pass = ?"
+db.query(sql, [name, pass])</code></pre><b>SQL 文本（结构已固定）+ 参数（单独传）：</b><pre><code id="s2">—</code></pre><b>数据库「看到」的词法单元：</b><div id="t2" style="line-height:2.2"></div><div id="r2"></div></div></div>
+<p><span class="chip" style="background:#dbeafe;color:#1e40af">关键字</span> <span class="chip" style="background:#e5e7eb;color:#111">标识符/符号</span> <span class="chip" style="background:#dcfce7;color:#166534">字符串数据</span> <span class="chip" style="background:#fef3c7;color:#92400e">🔒 绑定参数（永远是数据）</span></p></div>
+<style>.chip{display:inline-block;padding:1px 8px;margin:2px;border-radius:6px;font:12.5px ui-monospace,Menlo,monospace}</style>
+<h2>看懂这个对比</h2>
+<ol><li><b>拼接</b>：数据库收到的是一整段文本，它自己切词、解析。输入里的引号会<b>提前结束</b>字符串，后面的内容被当成 SQL 语法——「数据」变成了「代码」。连 <code>O'Brien</code> 这样完全合法的名字都会直接报语法错误，这本身就是「拼接不可靠」的信号。</li>
+<li><b>参数化</b>：SQL 模板先被解析（<code>?</code> 只是占位符），生成固定的结构；参数随后被「绑定」到占位符的位置，作为一个值整体使用，<b>不会再被解析为 SQL</b>。引号、关键字、注释符都只是普通字符。</li></ol>
+<div class="note">简化示意：真实数据库的驱动实现不一定把预编译与执行分成两步发送（有的在客户端按类型规则安全转义/绑定），但对使用者而言「结构与数据分离」的保证是一致的。</div>
+<h2>正确写法速查</h2>
+<pre><code>// Node.js（mysql2 / pg 的占位符风格不同，示意）
+const [rows] = await db.execute('SELECT id,name FROM users WHERE name = ? AND pass_hash = ?', [name, hash]);
+
+# Python（sqlite3 / DB-API）
+cur.execute("SELECT id, name FROM users WHERE name = ?", (name,))
+
+// Java（JDBC）
+PreparedStatement ps = conn.prepareStatement("SELECT id,name FROM users WHERE name = ?");
+ps.setString(1, name);
+
+// PHP（PDO）
+$st = $pdo-&gt;prepare('SELECT id,name FROM users WHERE name = :n'); $st-&gt;execute([':n' =&gt; $name]);</code></pre>
+<h2>参数化不能解决的，要这样处理</h2>
+<ul><li><b>表名、列名、ORDER BY 方向</b>不能用参数绑定：用<b>固定白名单</b>映射（如前端传 <code>sort=price</code>，后端查表映射成固定的列名）。</li>
+<li><b>ORM 的原生 SQL 接口</b>（raw、literal）同样不能拼接，要用它提供的绑定参数。</li>
+<li><b>最小权限</b>：应用账号只给需要的表、需要的操作权限，出问题时损失最小。</li>
+<li><b>输入校验</b>是辅助（类型、长度、格式），<b>不是</b>替代。</li>
+<li><b>不要把数据库错误原样返回给用户</b>，记录到日志即可。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「过滤掉单引号 / 关键字就行了」</b>黑名单永远有遗漏，也会误伤 O'Brien 这类正常数据。根治方法是结构与数据分离。</div>
+<div><b>「用了 ORM 就绝对安全」</b>ORM 的参数化接口安全，但一旦把用户输入拼进 raw SQL 就回到原点。</div>
+<div><b>「前端校验过了」</b>请求可以绕过前端直接到达后端，校验必须在服务端。</div>
+<div><b>「存储过程天然安全」</b>存储过程内部如果再拼接动态 SQL，同样有问题。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html">OWASP：Query Parameterization Cheat Sheet（英文）</a></li>
+<li><a href="https://owasp.org/www-community/attacks/SQL_Injection">OWASP：SQL Injection 概述（英文）</a></li></ul>
+<script>
+const {$}=HIW;
+const DB=[{id:1,name:'alice',role:'admin',pass:'pw-a1'},{id:2,name:'bob',role:'user',pass:'pw-b2'},{id:3,name:"O'Brien",role:'user',pass:'pw-c3'}];
+const KW=['SELECT','FROM','WHERE','AND','OR'];
+function lex(s,params){const t=[];let i=0;
+ while(i<s.length){const c=s[i];
+  if(/\s/.test(c)){i++;continue}
+  if(s.startsWith('--',i)){t.push({k:'cmt',v:s.slice(i)});break}
+  if(c==="'"){let j=i+1,v='';for(;;){if(j>=s.length)throw Error('语法错误：字符串没有闭合（缺少结尾的单引号）');
+    if(s[j]==="'"){if(s[j+1]==="'"){v+="'";j+=2;continue}break}v+=s[j++]}
+   t.push({k:'str',v});i=j+1;continue}
+  if(c==='?'){t.push({k:'param',v:params.shift()});i++;continue}
+  if(/[A-Za-z_]/.test(c)){let j=i;while(j<s.length&&/\w/.test(s[j]))j++;const w=s.slice(i,j);t.push(KW.includes(w.toUpperCase())?{k:'kw',v:w.toUpperCase()}:{k:'id',v:w});i=j;continue}
+  if(/\d/.test(c)){let j=i;while(j<s.length&&/\d/.test(s[j]))j++;t.push({k:'num',v:+s.slice(i,j)});i=j;continue}
+  if('=,();'.includes(c)){t.push({k:'sym',v:c});i++;continue}
+  throw Error('语法错误：无法识别的字符 '+c)}
+ return t}
+function exec(t){let p=0;const pk=()=>t.filter(x=>x.k!=='cmt')[p],toks=t.filter(x=>x.k!=='cmt');
+ const peek=()=>toks[p],eat=()=>toks[p++],isKw=v=>peek()&&peek().k==='kw'&&peek().v===v;
+ const need=v=>{if(!isKw(v))throw Error('语法错误：此处期待 '+v+'，实际是 '+(peek()?peek().v:'结尾'));p++};
+ need('SELECT');const cols=[];do{const x=eat();if(!x||x.k!=='id')throw Error('语法错误：列名不对');cols.push(x.v)}while(peek()&&peek().v===','&&eat());
+ need('FROM');const tb=eat();if(!tb||tb.v!=='users')throw Error('表不存在');need('WHERE');
+ function prim(r){const x=eat();if(!x)throw Error('语法错误：表达式不完整');
+  if(x.k==='str'||x.k==='num'||x.k==='param')return()=>x.v;
+  if(x.k==='id')return row=>row[x.v];
+  if(x.v==='('){const e=or();if(!peek()||peek().v!==')')throw Error('语法错误：括号未闭合');p++;return e}
+  throw Error('语法错误：意外的 '+x.v)}
+ function cmp(){const a=prim();if(peek()&&peek().v==='='){p++;const b=prim();return r=>a(r)===b(r)}return r=>!!a(r)}
+ function and(){let a=cmp();while(isKw('AND')){p++;const b=cmp(),l=a;a=r=>l(r)&&b(r)}return a}
+ function or(){let a=and();while(isKw('OR')){p++;const b=and(),l=a;a=r=>l(r)||b(r)}return a}
+ const w=or();if(peek()&&peek().v===';')p++;if(p<toks.length)throw Error('语法错误：多余的内容 “'+toks[p].v+'”');
+ return DB.filter(w).map(r=>Object.fromEntries(cols.map(c=>[c,r[c]])))}
+const E=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const cls={kw:'background:#dbeafe;color:#1e40af',id:'background:#e5e7eb;color:#111',sym:'background:#e5e7eb;color:#111',num:'background:#e5e7eb;color:#111',str:'background:#dcfce7;color:#166534',param:'background:#fef3c7;color:#92400e',cmt:'background:#fee2e2;color:#991b1b'};
+function chips(t){return t.map(x=>`<span class="chip" style="${cls[x.k]}">${x.k==='param'?'🔒 ':''}${x.k==='str'||x.k==='param'?"'"+E(x.v)+"'":x.k==='cmt'?'/*注释，被忽略*/ '+E(x.v):E(x.v)}</span>`).join('')}
+function show(tid,rid,t,err){$(tid).innerHTML=err?'':chips(t);
+ let h;if(err)h=`<p class="bad"><b>💥 ${E(err.message)}</b></p>`;
+ else{const rs=exec(t);h=rs.length?`<p><span class="pill ${rs.length>1?'bad':'ok'}">返回 ${rs.length} 行</span> ${rs.length>1?'<b class="bad">本该只匹配 1 个用户，却返回了多行！</b>':'登录通过'}</p><pre><code>${E(rs.map(r=>JSON.stringify(r)).join('\n'))}</code></pre>`:'<p><span class="pill">0 行</span> 用户名或密码不匹配（预期的失败）</p>'}
+ $(rid).innerHTML=h}
+function run(){const n=$('#n').value,p=$('#p').value;
+ const s1=`SELECT id, name, role FROM users WHERE name = '${n}' AND pass = '${p}'`;
+ $('#s1').textContent=s1;
+ let t1,e1;try{t1=lex(s1,[]);exec(t1)}catch(e){e1=e}
+ try{if(!e1)show('#t1','#r1',t1)}catch(e){e1=e}
+ if(e1){$('#t1').innerHTML='';show('#t1','#r1',null,e1)}
+ const tpl='SELECT id, name, role FROM users WHERE name = ? AND pass = ?';
+ $('#s2').textContent=tpl+'\n参数: ['+JSON.stringify(n)+', '+JSON.stringify(p)+']';
+ try{show('#t2','#r2',lex(tpl,[n,p]))}catch(e){show('#t2','#r2',null,e)}}
+$('#run').onclick=run;
+document.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{$('#n').value=b.dataset.n;$('#p').value=b.dataset.p;run()});
+run();
+</script>
+<div class="nav2"><a href="05-index.html">← 上一课</a> <a href="../index.html">回到目录 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

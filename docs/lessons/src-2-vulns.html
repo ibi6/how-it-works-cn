@@ -1,0 +1,58 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>常见 Web 漏洞：为什么出现、怎么修 · 图解互联网基本功</title><meta name="description" content="不教攻击，只讲成因、影响与修复，并用本地假数据演示两个最典型的「缺了一道检查」。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 SRC 2 课</span><h1>常见 Web 漏洞：为什么出现、怎么修</h1><p class="lead">不教攻击，只讲成因、影响与修复，并用本地假数据演示两个最典型的「缺了一道检查」。</p>
+<div class="tldr"><b>一句话结论</b>绝大多数 Web 漏洞的根子只有两类：<b>把不可信的输入当成了可信的</b>（注入类），以及<b>少做了一道权限/校验检查</b>（访问控制类）。理解成因，修复思路就是顺理成章的。</div>
+<div class="note">本课所有演示都在你的浏览器里、用页面自带的假数据，不涉及任何真实系统，也不提供针对真实站点的攻击载荷清单。</div>
+<h2>🧪 动手试试①：XSS 的本质——输出时没有「转义」</h2>
+<div class="card lab">
+<p>想象一个留言板。下面输入框的内容会被「显示」出来。输入一段带 HTML 标记的文字，比如 <code>&lt;b&gt;你好&lt;/b&gt;</code>，对比两种显示方式（都放在<b>禁用脚本的沙箱</b>里，安全）。</p>
+<div class="ctl"><input type="text" id="x" value="&lt;b&gt;你好&lt;/b&gt; &lt;u&gt;世界&lt;/u&gt;" style="flex:1;min-width:200px"></div>
+<div class="grid g2"><div class="card" style="border-color:var(--bad)"><b>❌ 当作 HTML 直接拼进页面</b><iframe id="f1" sandbox style="width:100%;height:70px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe><small>输入里的标记被浏览器当成「代码」解析了：数据变成了代码。如果换成能执行脚本的标记，就是 XSS。</small></div>
+<div class="card" style="border-color:var(--ok)"><b>✅ 输出时转义（当作纯文本）</b><iframe id="f2" sandbox style="width:100%;height:70px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe><small>&lt; 变成 &amp;lt;，浏览器只把它当文字显示。</small></div></div></div>
+<h2>🧪 动手试试②：越权（IDOR）——只差一道检查</h2>
+<div class="card lab">
+<p>虚构场景：订单接口 <code>GET /api/orders/{id}</code>。你是用户 <b>小明</b>，只该看到自己的订单。切换服务端是否「检查订单属于当前用户」，再点其他订单号。</p>
+<div class="ctl"><label><input type="checkbox" id="chk"> 服务端校验「订单归属」</label></div>
+<div class="ctl" id="oid"></div><pre><code id="oresp">点击订单号</code></pre>
+<div class="note">只靠「ID 不容易猜」不是防护——ID 是可以被枚举、泄露的。根本做法是每次访问都做授权检查。</div></div>
+<h2>常见类型速览</h2>
+<div class="ctl" id="tabs"></div><div class="card" id="vc"></div>
+<h2>共通的防御思路</h2>
+<ul><li><b>永远不信任输入</b>：服务端校验类型/长度/范围；输出时按场景转义；数据库用参数化。</li>
+<li><b>默认拒绝</b>：每个接口显式做认证 + 授权，而不是「忘了加就开放」。</li>
+<li><b>纵深防御</b>：CSP、HttpOnly、SameSite、最小权限、日志告警叠加，单点失守不致命。</li>
+<li><b>安全默认值</b>：框架自带的转义、CSRF 保护别随手关掉。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「前端把按钮隐藏了就没人能点」</b>权限必须在服务端判断，前端隐藏只是体验。</div>
+<div><b>「用了 HTTPS 就不会有这些漏洞」</b>HTTPS 只保护传输，不管应用逻辑。</div>
+<div><b>「漏洞等级高就是技术难度高」</b>最危险的往往是最朴素的：少一行权限检查。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://owasp.org/www-project-top-ten/">OWASP Top 10（英文）</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP：XSS 防护速查表</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html">OWASP：授权速查表</a></li>
+<li><a href="https://owasp.org/www-community/attacks/csrf">OWASP：CSRF</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/CSP">MDN：内容安全策略 CSP</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP：SSRF 防护速查表</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html">OWASP：文件上传安全速查表</a></li></ul>
+<script>
+const {$}=HIW;const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function xs(){const v=$('#x').value;$('#f1').srcdoc='<body style="font:16px sans-serif;margin:8px">'+v;$('#f2').srcdoc='<body style="font:16px sans-serif;margin:8px">'+esc(v)}
+$('#x').oninput=xs;xs();
+const O={101:{o:'小明',i:'键盘'},102:{o:'小明',i:'鼠标'},103:{o:'小红',i:'手机（别人的订单）'},104:{o:'小刚',i:'耳机（别人的订单）'}};
+Object.keys(O).forEach(k=>{const b=document.createElement('button');b.textContent='订单 '+k;b.onclick=()=>{
+ const o=O[k];if($('#chk').checked&&o.o!=='小明'){$('#oresp').textContent=`HTTP 403 Forbidden\n{"error":"无权访问该订单"}`;return}
+ $('#oresp').textContent=`HTTP 200 OK\n{"id":${k},"owner":"${o.o}","item":"${o.i}"}`+(o.o!=='小明'?'\n\n⚠ 小明看到了别人的数据——这就是越权漏洞':'')};$('#oid').append(b)});
+const V=[
+['XSS 跨站脚本','不可信输入未转义就输出到页面，被浏览器当脚本执行。','在受害者浏览器里以其身份操作、读取页面数据、钓鱼。','按输出位置（HTML/属性/JS/URL）做上下文转义；用框架的默认转义；配置 CSP；Cookie 设 HttpOnly。'],
+['SQL 注入','把输入拼进 SQL 文本，数据被当成代码（见第 6 课）。','读取/篡改数据库内容，严重时控制数据库。','参数化查询；白名单处理表/列名；最小权限账号。'],
+['越权 / IDOR','接口只验证「你登录了」，没验证「这条数据是你的」或「你有这个权限」。','读取、修改别人的数据；普通用户执行管理员功能。','每个接口服务端都做对象级和功能级授权；默认拒绝；写自动化测试覆盖。'],
+['CSRF 跨站请求伪造','浏览器会自动带 Cookie，别的网站可诱使用户浏览器向本站发起「带登录态的请求」。','以用户身份执行改密码、转账等操作。','SameSite Cookie；CSRF Token；敏感操作二次确认；检查 Origin/Referer（见第 3、4 课）。'],
+['SSRF 服务端请求伪造','服务端按用户提供的 URL 去发请求，而没有限制目标。','服务器被当跳板访问内网或云元数据服务。','URL 白名单；禁止访问内网/保留地址；不跟随跳转；云环境启用更安全的元数据访问方式。'],
+['不安全的文件上传','只靠文件扩展名或前端校验，上传的文件被当可执行内容处理。','服务器上执行不可信代码、存储型 XSS。','白名单扩展名与真实类型；重命名；存放到不可执行目录或对象存储；限制大小；杀毒。'],
+['弱口令与登录缺陷','允许弱密码、无登录频率限制、重置流程可被滥用。','账号被接管。','强密码策略；速率限制与异常告警；多因素认证；重置令牌一次性且短时效。'],
+['敏感信息泄露','错误页堆栈、调试接口、备份文件、响应里多返回的字段。','为进一步攻击提供情报，或直接泄露隐私。','生产环境关闭调试；统一错误页；接口只返回必要字段；密钥不进代码仓库。']];
+V.forEach((v,i)=>{const b=document.createElement('button');b.textContent=v[0];b.onclick=()=>{[...$('#tabs').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+ $('#vc').innerHTML=`<h3>${v[0]}</h3><p><b>为什么会出现：</b>${v[1]}</p><p><b>可能的影响：</b>${v[2]}</p><p><b class="ok">怎么修：</b>${v[3]}</p>`};$('#tabs').append(b);if(!i)b.click()});
+</script>
+<div class="nav2"><a href="src-1-scope.html">← 上一课</a> <a href="src-3-lab.html">下一课：合法练习环境 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

@@ -1,0 +1,83 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cookie / Session / JWT：登录状态怎么记住 · 图解互联网基本功</title><meta name="description" content="HTTP 本身没有记忆。三种常见方案各自把「你是谁」存在哪里、有什么坑。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 3 课</span><h1>Cookie / Session / JWT：登录状态怎么记住</h1><p class="lead">HTTP 本身没有记忆。三种常见方案各自把「你是谁」存在哪里、有什么坑。</p>
+<div class="tldr"><b>一句话结论</b>HTTP 是「金鱼记忆」，每次请求都是陌生人；所以登录后服务器要发你一张「凭证」让浏览器每次带上——凭证放哪里、怎么防被偷、怎么防被滥用，就是这三种方案和那些 Cookie 属性的全部故事。</div>
+<h2>🧪 动手试试①：三种方案走一遍</h2>
+<div class="card lab"><div id="stp"></div>
+<div style="overflow:auto"><table id="tb" style="width:100%;border-collapse:collapse;margin-top:12px;font-size:14px"><thead><tr><th></th><th>Cookie + Session ID</th><th>Cookie + JWT</th><th>Authorization 头 + JWT</th></tr></thead><tbody></tbody></table></div></div>
+<div class="note">简化示意：真实系统还有刷新令牌、过期、轮换、注销等机制。「哪个更好」取决于场景，没有银弹。</div>
+
+<h2>🧪 动手试试②：为什么要设 HttpOnly / Secure / SameSite？</h2>
+<div class="card lab">
+<p>下面模拟一个<b>保存登录凭证的 Cookie</b>。调整属性，看看在几种<b>常见风险场景</b>里浏览器会不会带上/暴露它。</p>
+<div class="ctl"><label><input type="checkbox" id="fh" checked> HttpOnly</label><label><input type="checkbox" id="fs" checked> Secure</label><label>SameSite</label><select id="fss"><option>Strict</option><option selected>Lax</option><option>None</option><option value="">（不设置，浏览器默认按 Lax）</option></select></div>
+<pre><code id="sc"></code></pre>
+<table id="rs" style="width:100%;border-collapse:collapse;font-size:14px"></table></div>
+
+<h2>🧪 动手试试③：JWT 里的信息是「加密」的吗？</h2>
+<div class="card lab">
+<p>JWT 由三段 Base64URL 组成：<code>头.载荷.签名</code>。下面用演示密钥 <code>demo-secret</code>、HS256 现场签发（用浏览器自带的 WebCrypto）。</p>
+<div class="ctl"><button id="jn" class="primary">签发一个 JWT</button><button id="jv">验证签名</button></div>
+<pre><code id="jt" style="word-break:break-all;white-space:pre-wrap">点「签发」</code></pre>
+<div class="grid g2"><div><b>头（Header，可直接解码）</b><pre><code id="jh"></code></pre></div>
+<div><b>载荷（Payload，可编辑 ✎）</b><textarea id="jp" rows="6" style="width:100%;font-family:monospace;background:var(--code);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px"></textarea></div></div>
+<p id="jr" aria-live="polite"></p>
+<div class="note">试试把载荷里的 <code>"role":"user"</code> 改成别的再点「验证签名」：载荷任何人都能读、都能改，但<b>没有密钥就没法生成匹配的签名</b>，所以服务器会拒绝。结论：<b>不要把敏感信息放进 JWT 载荷</b>（它只是签名，不是加密）。</div></div>
+
+<h2>防御要点</h2>
+<ul>
+<li><b>凭证放 Cookie 时</b>：<code>HttpOnly</code>（脚本读不到，缓解页面脚本注入后凭证被窃取）、<code>Secure</code>（只走 HTTPS）、<code>SameSite=Lax/Strict</code>（缓解跨站请求伪造）。</li>
+<li><b>Session ID</b> 要足够随机、登录后重新生成、退出时服务端作废。</li>
+<li><b>JWT</b>：服务端必须校验签名、过期时间 <code>exp</code>、受众 <code>aud</code>；固定允许的算法；载荷不放敏感信息；考虑撤销方案。</li>
+<li><b>存在 localStorage</b> 的令牌能被页面里任何脚本读取，一旦出现脚本注入就会泄露——这是选方案要权衡的点。</li>
+<li>SameSite 不是万能：它缓解 CSRF，但敏感操作仍建议配合 CSRF Token、重新验证身份等。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「JWT 是加密的，放手机号也没事」</b>标准 JWT（JWS）只是签名，载荷人人可读。</div>
+<div><b>「有了 HttpOnly 就不怕脚本注入了」</b>HttpOnly 只能防「读走」Cookie，注入的脚本仍可能以你的身份发起操作，根本上要修复注入漏洞。</div>
+<div><b>「JWT 无状态所以不用管退出」</b>纯无状态的令牌在过期前很难主动作废，需要短有效期或黑名单等配套。</div>
+<div><b>「SameSite=None 就是更兼容更好」</b>None 意味着跨站请求也会带上 Cookie，必须同时 Secure，只在确实需要跨站（如嵌入式第三方）时使用。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Cookies">MDN：使用 HTTP Cookie</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Set-Cookie">MDN：Set-Cookie 头</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc7519">RFC 7519：JSON Web Token</a></li></ul>
+<script>
+const {$}=HIW;
+const rows=[
+ ['① 登录',['你提交账号密码 → 服务器校验','你提交账号密码 → 服务器校验','你提交账号密码 → 服务器校验']],
+ ['② 服务器发凭证',['生成随机 Session ID，在服务器内存/Redis 里记下 {id→你}','用密钥签发 JWT（里面直接写着你的信息）','签发 JWT，放在响应正文里']],
+ ['③ 浏览器保存',['Cookie 里只存那串随机 ID','Cookie 里存 JWT','前端 JS 自己存（内存/localStorage）']],
+ ['④ 之后每次请求',['浏览器<b>自动</b>带 Cookie','浏览器<b>自动</b>带 Cookie','前端代码<b>手动</b>加 <code>Authorization: Bearer …</code>']],
+ ['⑤ 服务器怎么认你',['拿 ID 去查表','验证签名和过期时间，不用查表','验证签名和过期时间，不用查表']],
+ ['⑥ 主要风险点',['Session 固定、ID 被盗；要有存储','自动携带 → 需防 CSRF；令牌难撤销','不会被自动带上（天然少 CSRF），但存 localStorage 时脚本注入可读走']]];
+const tb=$('#tb tbody');rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td style="white-space:nowrap;padding:8px;border-top:1px solid var(--line);color:var(--mute)">${r[0]}</td>`+r[1].map(x=>`<td style="padding:8px;border-top:1px solid var(--line);vertical-align:top;transition:.3s">${x}</td>`).join('');tb.append(tr)});
+HIW.stepper($('#stp'),rows.map(r=>({html:`<b>${r[0]}</b>`})),i=>{[...tb.rows].forEach((tr,k)=>{tr.style.opacity=k<=i?1:.22;tr.style.background=k==i?'color-mix(in srgb,var(--brand) 10%,transparent)':''})},{interval:2400});
+// cookie sim
+function cs(){const h=$('#fh').checked,s=$('#fs').checked,ss=$('#fss').value;
+ $('#sc').textContent=`Set-Cookie: sid=9f8c…e1; Path=/${h?'; HttpOnly':''}${s?'; Secure':''}${ss?'; SameSite='+ss:''}`;
+ const eff=ss||'Lax';
+ const bad=ss==='None'&&!s;
+ const R=[
+  ['页面里被注入的不可信脚本执行 <code>document.cookie</code>',h?[1,'读不到该 Cookie']:[0,'脚本能读走凭证']],
+  ['别的网站（evil.example）自动提交一个<b>跨站 POST 表单</b>到本站',bad?[1,'浏览器会拒绝该 Cookie（None 必须配 Secure）']:eff==='None'?[0,'Cookie 被带上，可能被滥用（CSRF）']:[1,'跨站 POST 不带 Cookie']],
+  ['用户在别的网站上<b>点链接</b>（顶级 GET 导航）进入本站',eff==='Strict'?[1,'不带 Cookie（体验：看起来「没登录」，再点一次才好）']:[1,'带 Cookie，用户保持登录（这是预期行为，所以 GET 不应有副作用）']],
+  ['用户误访问 <code>http://</code> 明文版本',s?[1,'不会通过明文发送 Cookie']:[0,'Cookie 可能经明文泄露给中间人']]];
+ $('#rs').innerHTML=R.map(r=>`<tr><td style="padding:8px;border-top:1px solid var(--line)">${r[0]}</td><td style="padding:8px;border-top:1px solid var(--line);white-space:nowrap">${r[1][0]?'<span class="pill ok">✓ 被防住</span>':'<span class="pill bad">✗ 有风险</span>'}</td><td style="padding:8px;border-top:1px solid var(--line);color:var(--mute)">${r[1][1]}</td></tr>`).join('')}
+['#fh','#fs','#fss'].forEach(x=>$(x).onchange=cs);cs();
+// jwt
+const b64=u=>btoa(String.fromCharCode(...u)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const enc=s=>b64(new TextEncoder().encode(s));
+const dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0)));
+async function sig(d){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode('demo-secret'),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64(new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(d))))}
+let orig=null;
+$('#jn').onclick=async()=>{if(!crypto.subtle){$('#jr').textContent='此环境不支持 WebCrypto（需要 HTTPS 或 localhost）';return}
+ const h='{"alg":"HS256","typ":"JWT"}',p=JSON.stringify({sub:'1001',name:'xiaoming',role:'user',exp:Math.floor(Date.now()/1000)+3600},null,1);
+ const d=enc(h)+'.'+enc(JSON.stringify(JSON.parse(p)));orig={h:enc(h),s:await sig(d)};
+ $('#jh').textContent=h;$('#jp').value=p;show(enc(JSON.stringify(JSON.parse(p))));$('#jr').innerHTML=''};
+function show(pp){$('#jt').innerHTML=`<span style="color:#ef4444">${orig.h}</span>.<span style="color:#a855f7">${pp}</span>.<span style="color:#06b6d4">${orig.s}</span>`}
+$('#jv').onclick=async()=>{if(!orig){$('#jr').textContent='先点「签发」';return}
+ let pp;try{pp=enc(JSON.stringify(JSON.parse($('#jp').value)))}catch(e){$('#jr').innerHTML='<span class="warn">载荷不是合法 JSON</span>';return}
+ show(pp);const ok=(await sig(orig.h+'.'+pp))===orig.s;
+ $('#jr').innerHTML=ok?'<b class="ok">✔ 签名匹配：载荷未被改动</b>':'<b class="bad">✘ 签名不匹配：载荷被改过，服务器会拒绝这个令牌</b>'};
+</script>
+<div class="nav2"><a href="02-https.html">← 上一课</a> <a href="04-cors.html">下一课：同源策略与 CORS →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

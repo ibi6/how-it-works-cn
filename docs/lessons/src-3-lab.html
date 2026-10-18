@@ -1,0 +1,46 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合法练习环境：在自己的电脑上搭靶场 · 图解互联网基本功</title><meta name="description" content="想练手，就在「自己家」练：DVWA、WebGoat、pikachu 等故意留漏洞的靶场，只在本机或隔离网络里运行。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 SRC 3 课</span><h1>合法练习环境：在自己的电脑上搭靶场</h1><p class="lead">想练手，就在「自己家」练：DVWA、WebGoat、pikachu 等故意留漏洞的靶场，只在本机或隔离网络里运行。</p>
+<div class="tldr"><b>一句话结论</b>靶场是「故意有漏洞的练习用网站」。安全练习的三条铁律：<b>只装在自己的机器/虚拟机里、只监听 127.0.0.1、绝不暴露到公网</b>。因为它们的漏洞是真的，放到公网等于给别人开门。</div>
+<h2>🧪 动手试试①：生成安全的启动命令</h2>
+<div class="card lab">
+<div class="ctl"><label>选择靶场</label><select id="lab"><option value="dvwa">DVWA（PHP，入门首选）</option><option value="webgoat">WebGoat（Java，边学边练的教学课程）</option><option value="pikachu">pikachu（国内常用，PHP+MySQL）</option></select></div>
+<div id="lo"></div></div>
+<div class="note">镜像名、端口以各项目官方文档为准，可能随版本变化；下面命令是常见写法的示意，使用前请先读官方 README。</div>
+<h2>🧪 动手试试②：开练前的安全检查清单</h2>
+<div class="card lab"><div id="ck"></div><div class="prog" style="margin-top:10px"><i id="cp"></i></div><p id="cm" aria-live="polite"></p></div>
+<h2>三个靶场怎么选</h2>
+<div class="grid g3">
+<div class="card"><h3>DVWA</h3><p>页面简单，有「安全等级」滑块（低/中/高/不可能），同一个漏洞能看到「写得烂」到「写得对」的代码对比，对学防御特别友好。</p></div>
+<div class="card"><h3>WebGoat</h3><p>OWASP 出品，带分步教程课程，每课先讲原理再让你练。Java 技术栈。</p></div>
+<div class="card"><h3>pikachu</h3><p>中文界面，按漏洞类型分章节，适合入门对照学习。按其 README 搭建 PHP + MySQL 环境。</p></div></div>
+<h2>学习方法（比「通关」更重要）</h2>
+<ol><li>先读这个漏洞的原理（本站第 2 课），再去靶场看现象。</li>
+<li>看到现象后，<b>去看源码为什么会这样</b>；再看「安全等级高」时源码是怎么修的。</li>
+<li>自己动手把有洞的代码改对，再验证。</li>
+<li>每个漏洞写一页笔记：成因 → 现象 → 修复 → 一个现实中的例子。</li></ol>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「在云服务器上搭个靶场，方便远程练」</b>一旦被扫描器发现，你的服务器可能被真正入侵。要放就加访问控制，仅允许你自己的 IP。</div>
+<div><b>「靶场通关很快就能去挖真站了」</b>靶场很「干净」，真实世界复杂得多，而且还要有授权。先读公开报告、学规则。</div>
+<div><b>「在靶场里用的账号密码可以复用我的」</b>永远用一次性的假密码。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://github.com/digininja/DVWA">DVWA（GitHub）</a></li>
+<li><a href="https://github.com/WebGoat/WebGoat">WebGoat（GitHub）</a></li>
+<li><a href="https://github.com/zhuifengshaonianhanlu/pikachu">pikachu（GitHub）</a></li>
+<li><a href="https://portswigger.net/web-security">PortSwigger Web Security Academy：免费在线靶场与教程（英文）</a></li>
+<li><a href="https://docs.docker.com/get-started/">Docker 入门</a></li></ul>
+<script>
+const {$}=HIW;
+const L={dvwa:['DVWA','http://127.0.0.1:4280','docker run --rm -it -p 127.0.0.1:4280:80 vulnerables/web-dvwa','首次访问按页面提示创建/重置数据库，再登录；把「DVWA Security」先设为 Low 观察现象，再逐级调高对比。'],
+webgoat:['WebGoat','http://127.0.0.1:8080/WebGoat','docker run --rm -it -p 127.0.0.1:8080:8080 webgoat/webgoat','注册一个仅用于练习的本地账号，按课程顺序学习。具体端口/镜像以官方 README 为准。'],
+pikachu:['pikachu','http://127.0.0.1:8081/pikachu','# 没有统一官方镜像，请阅读项目 README 后用 LAMP/phpStudy 或你信任的 compose 文件部署\n# 关键：Web 服务只绑定 127.0.0.1','按 README 初始化数据库后访问；按漏洞类型逐章练习。']};
+function lab(){const [n,u,c,t]=L[$('#lab').value];$('#lo').innerHTML=`<p><b>${n}</b> 启动命令（注意 <code>127.0.0.1:</code> 前缀：<u>只允许本机访问</u>）：</p><pre><code>${c.replace(/</g,'&lt;')}</code></pre><p>然后在本机浏览器打开 <code>${u}</code></p><p>${t}</p><p class="note">如果去掉 <code>127.0.0.1:</code>，端口会对局域网甚至公网开放——这正是要避免的。</p>`}
+$('#lab').onchange=lab;lab();
+const C=['靶场安装在自己的电脑或虚拟机里，不在公司/学校内网的共享服务器上','端口只绑定 127.0.0.1（或虚拟机的仅主机网络）','没有把端口映射到路由器/云服务器公网','用的是一次性假账号和假密码，不复用真实密码','练习前给虚拟机打了快照，坏了可以回滚','练习结束就关闭靶场容器/服务','只对靶场做测试，不把同样手法用在任何没授权的站点'];
+const sv=JSON.parse(localStorage.getItem('hiw-lab')||'[]');
+C.forEach((t,i)=>{const l=document.createElement('label');l.style.cssText='display:block;padding:4px 0';l.innerHTML=`<input type=checkbox ${sv[i]?'checked':''}> ${t}`;l.firstChild.onchange=u;$('#ck').append(l)});
+function u(){const a=[...$('#ck').querySelectorAll('input')].map(x=>x.checked);localStorage.setItem('hiw-lab',JSON.stringify(a));const n=a.filter(Boolean).length;$('#cp').style.width=n/a.length*100+'%';$('#cm').innerHTML=n===a.length?'<b class="ok">✔ 全部确认，可以开始练习。</b>':`还差 ${a.length-n} 项。`}
+$('#cp').style.cssText='display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2));transition:width .3s';u();
+</script>
+<div class="nav2"><a href="src-2-vulns.html">← 上一课</a> <a href="src-4-report.html">下一课：怎么写漏洞报告 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

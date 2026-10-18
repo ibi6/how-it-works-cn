@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>图解互联网基本功 · 可交互的中文原理课</title><meta name="description" content="全中文、可交互、逐步动画的互联网与 Web 安全基本功原理课，含 SRC 入门专题。零依赖纯静态。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="assets/style.css"><script src="assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="https://github.com/ibi6/how-it-works-cn" style="font-size:14px">GitHub</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header>
+<main>
+<section class="hero"><span class="tag">全中文 · 可交互 · 零依赖</span><h1>别背概念，<br>亲手「点」懂互联网怎么运转</h1><p class="lead">每一课都有动画和可操作的小实验：看数据包飞、看中间人看到什么、看树分裂、看一次 SQL 如何被「拆词」。零基础可入门，所有演示都在浏览器本地模拟。</p></section>
+
+<a class="lc" href="lessons/src-1-scope.html" style="margin:26px 0;background:linear-gradient(135deg,color-mix(in srgb,var(--brand) 18%,var(--card)),color-mix(in srgb,var(--brand2) 16%,var(--card)));border-color:var(--brand)">
+<span class="tag">🔥 专题</span><h2 style="margin:.3em 0">SRC 入门专题：先学规矩，再学本事</h2>
+<p style="font-size:16px">想学「挖 SRC」？从这里开始：合法边界与授权范围 → 常见漏洞原理与防御 → 本地靶场 → 怎么写报告 → 学习路线图。只讲原理与防御，所有演示本地模拟。</p><p style="margin-top:10px;color:var(--brand);font-weight:700">开始第 1 课 →</p></a>
+<div class="lessons" id="srcl"></div>
+
+<h2 style="margin-top:46px">基础原理课</h2>
+<div class="lessons" id="bl"></div>
+<h2 style="margin-top:46px">怎么用这个站</h2>
+<ul><li>每课有「一句话结论」「动手试试」「常见误区」「延伸阅读」。</li><li>演示里的「简化示意」提示表示为便于理解做了省略，细节以 RFC / 官方文档为准。</li><li>点右上角切换深浅色；系统开启「减少动态效果」时动画自动关闭。</li></ul>
+</main><footer>图解互联网基本功 · MIT · 纯教育与防御目的 · <a href="https://github.com/ibi6/how-it-works-cn">参与贡献</a></footer>
+<script>
+const B=[['01-url','输入网址按下回车后发生了什么','DNS → TCP → TLS → HTTP → 渲染，数据包动画可单步。'],['02-https','HTTPS 为什么安全','对比明文与加密中间人视角，认识证书链。'],['03-session','Cookie / Session / JWT','三种登录状态方案对比，HttpOnly / SameSite 为何重要。'],['04-cors','同源策略与 CORS','模拟「为什么被拦」，弄懂预检请求。'],['05-index','数据库索引为什么快','B+ 树可视化，亲眼看节点分裂与步数对比。'],['06-sqli','参数化查询为什么能防 SQL 注入','代码与数据分离，用假数据库看懂原理。']];
+const S=[['src-1-scope','什么是 SRC？合法边界','授权范围、红线与规则要点，附边界小测验。'],['src-2-vulns','常见 Web 漏洞原理与防御','XSS / 越权等成因与修复，本地演示。'],['src-3-lab','合法练习环境','DVWA / WebGoat / pikachu 安全搭建与清单。'],['src-4-report','漏洞报告与沟通','报告生成器、定级直觉与礼仪。'],['src-5-roadmap','学习路线图','基本功 → 靶场 → 公开报告 → 合规参与。']];
+const f=(a,id,off)=>document.getElementById(id).innerHTML=a.map((x,i)=>`<a class="lc" href="lessons/${x[0]}.html"><div class="n">${off?'S'+(i+1):String(i+1).padStart(2,'0')}</div><h3>${x[1]}</h3><p>${x[2]}</p></a>`).join('');
+f(S,'srcl',1);f(B,'bl',0);
+</script></body></html>

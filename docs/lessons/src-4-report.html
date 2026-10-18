@@ -1,0 +1,53 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>漏洞报告怎么写，怎么沟通 · 图解互联网基本功</title><meta name="description" content="同一个漏洞，好报告几小时被复现，差报告石沉大海。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 SRC 4 课</span><h1>漏洞报告怎么写，怎么沟通</h1><p class="lead">同一个漏洞，好报告几小时被复现，差报告石沉大海。</p>
+<div class="tldr"><b>一句话结论</b>好报告 = <b>让对方不用问你任何问题</b>就能复现、评估和修复：标题说清「哪里、什么问题」，影响讲清「能造成什么后果」，步骤能照做，并附修复建议。</div>
+<h2>🧪 动手试试①：报告生成器</h2>
+<div class="card lab">
+<p>填写下面字段（示例已预填，是针对<b>虚构的靶场</b>的内容），右侧实时生成 Markdown。</p>
+<div class="grid g2"><div>
+<div class="ctl"><label>标题</label><input type="text" id="t" style="width:100%" value="【示例商城·订单接口】GET /api/orders/{id} 存在水平越权，可读取其他用户订单"></div>
+<div class="ctl"><label>受影响资产</label><input type="text" id="a" style="width:100%" value="https://shop.example.com/api/orders/{id}（虚构）"></div>
+<div class="ctl"><label>严重等级（建议）</label><select id="s"><option>低危</option><option selected>中危</option><option>高危</option><option>严重</option></select></div>
+<label>影响</label><textarea id="i" rows="3" style="width:100%">已登录的任意用户修改订单号即可读取他人订单（收货人、地址、商品）。订单号为自增数字，可被枚举，影响全部用户。</textarea>
+<label>复现步骤</label><textarea id="r" rows="5" style="width:100%">1. 使用测试账号 A、B 分别登录并各下一单（订单号 101、102）
+2. 以账号 A 的会话请求 GET /api/orders/102
+3. 预期：403；实际：200，返回账号 B 的订单详情
+（仅使用自己的两个测试账号；未访问任何真实用户数据）</textarea>
+<label>修复建议</label><textarea id="f" rows="3" style="width:100%">服务端在查询订单时校验 order.user_id == 当前登录用户；对象级授权统一放在中间件；增加自动化测试。</textarea></div>
+<div><pre style="min-height:300px;white-space:pre-wrap"><code id="o"></code></pre><button id="cp2">复制 Markdown</button> <span id="cm2"></span></div></div></div>
+<h2>🧪 动手试试②：这个漏洞大概几级？</h2>
+<div class="card lab"><p>各平台有自己的定级标准（常参考 <a href="https://www.first.org/cvss/">CVSS</a>），<b>最终以平台审核为准</b>。这里用三个问题帮你建立直觉：</p>
+<div class="ctl"><label>谁能利用？</label><select id="q1"><option value=0>需要管理员权限</option><option value=1 selected>需要普通登录用户</option><option value=2>无需登录</option></select></div>
+<div class="ctl"><label>能得到什么？</label><select id="q2"><option value=0>几乎没有敏感信息</option><option value=1 selected>少量个人信息/单条数据</option><option value=2>大量用户数据或任意操作</option><option value=3>服务器/系统控制权</option></select></div>
+<div class="ctl"><label>利用难度？</label><select id="q3"><option value=0>很苛刻（需特殊条件）</option><option value=1 selected>一般</option><option value=2>很容易、可批量</option></select></div>
+<p id="sev" style="font-size:18px" aria-live="polite"></p></div>
+<h2>好报告的清单</h2>
+<ul><li>✅ 标题：<b>哪个资产 + 什么类型 + 一句话后果</b>，别写「发现一个漏洞」。</li>
+<li>✅ 影响：用业务语言讲清后果和影响范围，不夸大。</li>
+<li>✅ 步骤：编号、可复制、写明测试账号和前置条件，附截图/请求响应（<b>打码敏感信息</b>）。</li>
+<li>✅ 证据最小化：只证明漏洞存在，不附任何真实用户数据。</li>
+<li>✅ 修复建议：给方向（不必写完整补丁），体现你理解成因。</li>
+<li>✅ 一个报告一个漏洞；同源多点的合并说明，不要刷数量。</li></ul>
+<h2>沟通礼仪</h2>
+<div class="grid g2"><div class="card"><h3 class="ok">✅ 这样沟通</h3><ul><li>礼貌、客观，对事不对人</li><li>对方要补充信息，及时、具体地回复</li><li>被判重复/忽略：先看规则，再理性申诉，附补充证据</li><li>修复前保密，修复后经允许再写文章</li><li>耐心：审核、修复都需要时间</li></ul></div>
+<div class="card"><h3 class="bad">❌ 不要这样</h3><ul><li>催促、施压、威胁「不给钱就公开」</li><li>夸大危害博高等级</li><li>一个洞拆成十份刷数量</li><li>报告里附他人真实数据</li><li>私下把细节发给第三方</li></ul></div></div>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「报告越长越好」</b>要的是复现信息完整，不是篇幅。</div>
+<div><b>「只写“存在XSS”，他们自己会验证」</b>不给出位置和步骤，大概率被要求补充甚至关闭。</div>
+<div><b>「评了低危是看不起我」</b>定级看影响与利用条件；用事实说话，认真学习对方给出的理由。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://www.first.org/cvss/">FIRST：CVSS 通用漏洞评分系统（英文）</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html">OWASP：漏洞披露速查表（英文）</a></li>
+<li><a href="https://hackerone.com/hacktivity">HackerOne Hacktivity：已公开的真实报告，可学习写法（英文）</a></li></ul>
+<script>
+const {$}=HIW;
+function g(){const m=`# ${$('#t').value}\n\n**受影响资产**：${$('#a').value}\n\n**严重等级（建议）**：${$('#s').value}\n\n## 影响\n${$('#i').value}\n\n## 复现步骤\n${$('#r').value}\n\n## 修复建议\n${$('#f').value}\n`;$('#o').textContent=m;return m}
+['t','a','s','i','r','f'].forEach(x=>$('#'+x).oninput=g);g();
+$('#cp2').onclick=async()=>{try{await navigator.clipboard.writeText(g());$('#cm2').textContent='已复制'}catch(e){$('#cm2').textContent='请手动选中复制'}};
+function sv(){const a=+$('#q1').value,b=+$('#q2').value,c=+$('#q3').value;let sc=b*2+(a>=2?2:a)+c;if(b===0)sc=Math.min(sc,2);
+ const l=sc<=2?['低危','ok']:sc<=5?['中危','warn']:sc<=7?['高危','bad']:['严重','bad'];$('#sev').innerHTML=`建议参考：<b class="${l[1]}">${l[0]}</b>`}
+['q1','q2','q3'].forEach(x=>$('#'+x).onchange=sv);sv();
+</script>
+<div class="nav2"><a href="src-3-lab.html">← 上一课</a> <a href="src-5-roadmap.html">下一课：学习路线图 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

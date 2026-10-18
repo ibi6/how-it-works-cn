@@ -1,0 +1,56 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>什么是 SRC？合法边界在哪里 · 图解互联网基本功</title><meta name="description" content="先学会「不越界」，再谈挖洞：授权范围、禁止行为、平台规则要点。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 SRC 1 课</span><h1>什么是 SRC？合法边界在哪里</h1><p class="lead">先学会「不越界」，再谈挖洞：授权范围、禁止行为、平台规则要点。</p>
+<div class="tldr"><b>一句话结论</b>SRC（Security Response Center，安全应急响应中心）是企业公开邀请白帽子「在规定范围、按规定方式」帮忙找漏洞的渠道。<b>有授权才测，范围之外不碰，点到为止，立刻报告</b>——这是底线，比任何技术都重要。</div>
+<div class="note">本页是通用科普，<b>不是法律意见</b>。各国/地区法律（如我国《刑法》《网络安全法》《数据安全法》等）对未经授权的访问、数据获取有明确规定，请自行查阅最新条文，并以各平台、各项目的最新规则为准。</div>
+<h2>SRC / 漏洞赏金 / 众测是什么关系</h2>
+<div class="grid g3">
+<div class="card"><h3>🏢 企业 SRC</h3><p>企业自己运营的收洞渠道，如各大厂的 SRC，规则、范围、奖励都写在官网公告里。</p></div>
+<div class="card"><h3>🌐 漏洞平台</h3><p>第三方平台聚合多家企业项目，统一审核、结算，如国内的补天，国外的 HackerOne 等。</p></div>
+<div class="card"><h3>👥 众测</h3><p>企业在限定时间内邀请一批白帽测试某个具体系统，范围更窄、规则更细。</p></div></div>
+<h2>🧪 动手试试：这样做合法吗？</h2>
+<div class="card lab">
+<p>下面是一个<b>虚构</b>的项目规则。读完后，对每个行为选「可以」或「不可以」，看看你的边界感。</p>
+<pre><code>【虚构项目：示例商城 SRC】
+范围内：  *.shop.example.com 下的官方网站、官方 App
+范围外：  pay.shop.example.com（第三方支付页）、所有第三方服务、员工个人账号
+禁止：    拒绝服务/压力测试、社会工程学、物理攻击、读取/下载他人数据、
+          批量扫描、测试时影响真实用户
+要求：    仅使用自己注册的测试账号；发现漏洞立即停止并报告；报告前不公开</code></pre>
+<div id="q"></div><div id="qs" class="lead" aria-live="polite"></div></div>
+<h2>授权范围（scope）怎么读</h2>
+<ul><li><b>范围内资产</b>：只测明确列出的域名/IP/App。不在列表里 = 没授权，哪怕看起来是同一家公司的。</li>
+<li><b>漏洞类型</b>：有的项目明确「不收」某些类型（如纯理论的、需要用户重度交互的、无安全影响的），测之前先看。</li>
+<li><b>测试方式</b>：是否允许自动化工具、频率上限、测试账号要求。</li>
+<li><b>数据底线</b>：证明漏洞存在只需要最小证据（如自己的账号能看到「别人的订单」的<u>自己造的第二个测试账号的订单</u>），<b>不要</b>去翻、存、传真实用户数据。</li></ul>
+<h2>红线清单（通用）</h2>
+<div class="grid g2">
+<div class="card"><h3 class="bad">❌ 绝对不要</h3><ul><li>没授权就测试（「我只是看看」也不行）</li><li>拿到漏洞后继续深入、横向移动、留后门</li><li>下载、保存、展示真实用户数据</li><li>用漏洞换钱、敲诈、威胁企业「不给赏金就公开」</li><li>造成服务中断（DoS、大量写入脏数据）</li><li>利用漏洞做和证明无关的事</li></ul></div>
+<div class="card"><h3 class="ok">✅ 应该做</h3><ul><li>先读规则，确认范围与允许的方式</li><li>只用自己的测试账号和测试数据</li><li>验证到「能证明存在」就停</li><li>尽快、私下、完整地报告</li><li>漏洞修复前不公开细节</li><li>不确定？<b>先问项目方</b>，或不测</li></ul></div></div>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「网站没有 SRC，我测了发现问题告诉他们是在帮忙」</b>没有授权就是未授权访问，善意不等于合法。没有公开渠道的站点，请不要测。</div>
+<div><b>「只是扫一下，没做什么破坏」</b>未经授权的扫描本身可能就违规；而且扫描会给对方带来负载与告警。</div>
+<div><b>「同一家公司，子域名肯定也算范围」</b>以规则里写的范围为准，通配符才包含子域。</div>
+<div><b>「漏洞被忽略/评低，我就公开它」</b>未经允许公开未修复漏洞，可能违反规则甚至法律。有分歧走申诉/平台仲裁。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://security.tencent.com/">腾讯安全应急响应中心（TSRC）</a>：看看真实的收洞规则怎么写</li>
+<li><a href="https://security.alibaba.com/">阿里安全响应中心（ASRC）</a></li>
+<li><a href="https://www.butian.net/">补天漏洞响应平台</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html">OWASP：漏洞披露速查表（英文）</a></li></ul>
+<script>
+const Q=[['测试自己用邮箱注册的账号，在 shop.example.com 的订单页看自己订单是否有越权展示问题（只用你自己的两个测试账号）',1,'范围内、用自己的账号、最小验证。'],
+['看到 pay.shop.example.com 支付页有可疑现象，想深入测一下',0,'明确在范围外，且是第三方页面。'],
+['写个脚本每秒 500 次请求登录接口，看会不会被限速',0,'属于压力/暴力类行为，规则禁止，并可能影响真实用户。'],
+['发现某接口能看到别人的手机号，把几百条保存下来做成截图证明',0,'禁止读取/保存他人数据。证明漏洞只需极少量、最好是自己造的测试数据。'],
+['发现问题后，只用两个自己的账号复现一次，截图后立刻停止并提交报告',1,'这正是标准做法：最小验证 + 立即报告。'],
+['发给同事朋友「看我发现个厉害的洞」，附上细节',0,'修复前不公开细节，朋友圈、群聊也算。'],
+['给客服发邮件，说服对方告诉你某用户的账号信息，看看有没有流程漏洞',0,'社会工程学被明确禁止。'],
+['在 shop.example.com 范围外的 old-site.test（看起来像同公司）上试试',0,'不在范围列表里，没授权。']];
+const q=document.getElementById('q');let score=0,done=0;
+Q.forEach((x,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML=`<p>${i+1}. ${x[0]}</p><div class=ctl><button data-v=1>可以</button><button data-v=0>不可以</button><span></span></div>`;
+ d.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(d.dataset.d)return;d.dataset.d=1;done++;const ok=+b.dataset.v===x[1];if(ok)score++;
+  d.querySelector('span').innerHTML=(ok?'<b class="ok">✔ 正确</b> ':'<b class="bad">✘ 不对</b> ')+x[2];d.style.borderColor=ok?'var(--ok)':'var(--bad)';
+  if(done===Q.length)document.getElementById('qs').textContent=`得分 ${score}/${Q.length}。`+(score===Q.length?'边界感很好，继续保持。':'再读一遍红线清单，不确定就问、就不测。')});q.append(d)});
+</script>
+<div class="nav2"><a href="../index.html">← 目录</a> <a href="src-2-vulns.html">下一课：常见 Web 漏洞的原理与防御 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

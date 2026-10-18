@@ -1,0 +1,72 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>输入网址按下回车后发生了什么 · 图解互联网基本功</title><meta name="description" content="从 DNS 到 TCP、TLS、HTTP，再到页面渲染：一次访问背后的完整旅程。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 1 课</span><h1>输入网址按下回车后发生了什么</h1><p class="lead">从 DNS 到 TCP、TLS、HTTP，再到页面渲染：一次访问背后的完整旅程。</p>
+<div class="tldr"><b>一句话结论</b>回车之后，浏览器要先「问路」（DNS），再「敲门」（TCP 三次握手），再「说悄悄话」（TLS 协商密钥），最后才「点菜」（HTTP 请求）——页面是最后一步。</div>
+<h2>🧪 动手试试：单步观看数据包旅行</h2>
+<div class="card lab">
+<div class="ctl"><code>https://example.com/</code><span class="note" style="margin:0">仅作演示，不会发出真实请求；IP 使用文档保留地址 192.0.2.10。</span></div>
+<div class="stage" id="stage" style="height:300px">
+ <div class="node" id="n-c" style="left:12%;top:70%"><em>💻</em>你的浏览器</div>
+ <div class="node" id="n-d" style="left:50%;top:20%"><em>📖</em>DNS 服务器</div>
+ <div class="node" id="n-s" style="left:88%;top:70%"><em>🖥️</em>网站服务器</div>
+ <div class="pkt" id="pkt"></div>
+</div>
+<div id="stp"></div>
+<ol class="log" id="log"></ol>
+</div>
+<div class="note">本课为<b>简化示意</b>：TLS 以 1.3 为例；真实世界还有 DNS 缓存、递归/迭代查询、CDN、HTTP/2/3(QUIC 不走 TCP)、连接复用等。</div>
+<h2>每个阶段在干嘛</h2>
+<div class="grid g2">
+<div class="card"><h3>① DNS：把名字变成地址</h3><p>网络路由认的是 IP，人记的是域名。浏览器先查自己和系统的缓存，没有就问 DNS 解析器（通常是运营商或 8.8.8.8 之类），得到 IP。</p></div>
+<div class="card"><h3>② TCP：先确认「彼此能听见」</h3><p>三次握手：客户端 <code>SYN</code> → 服务器 <code>SYN-ACK</code> → 客户端 <code>ACK</code>。双方交换初始序列号，约定好可靠传输的起点。</p></div>
+<div class="card"><h3>③ TLS：在公开线路上建立私密通道</h3><p>TLS 1.3 里，客户端 <code>ClientHello</code>（带密钥交换份额），服务器回 <code>ServerHello</code> 并发出证书和 <code>Finished</code>，客户端验证证书后发 <code>Finished</code>，之后的数据全部加密。1 个往返即可（1-RTT）。</p></div>
+<div class="card"><h3>④ HTTP：真正的「点菜」</h3><p>在加密通道里发 <code>GET / HTTP/1.1</code> 等请求，服务器回状态码（如 200）、响应头和正文 HTML。</p></div>
+</div>
+<div class="card"><h3>⑤ 渲染</h3><p>浏览器解析 HTML 构建 DOM，解析 CSS 构建 CSSOM，合成渲染树，布局、绘制；遇到 <code>&lt;img&gt;</code>、<code>&lt;script&gt;</code> 又会发起新的请求，重复上面的流程（常常复用已建好的连接）。</p></div>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「HTTPS 就是 HTTP 加了个锁图标」</b>HTTPS 是 HTTP 跑在 TLS 之上，TLS 握手发生在任何 HTTP 内容发送之前。</div>
+<div><b>「DNS 查询是加密的」</b>传统 DNS 是明文的，网络中间人能看到你查了哪些域名；DoH/DoT 才加密。</div>
+<div><b>「握手每次都要完整来一遍」</b>浏览器会复用连接（keep-alive）、TLS 会话恢复，所以第二次访问更快。</div>
+</div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Overview">MDN：HTTP 概述</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/Performance/How_browsers_work">MDN：浏览器是如何工作的</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc9293">RFC 9293：TCP</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc8446">RFC 8446：TLS 1.3</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc1035">RFC 1035：DNS 实现与规范</a></li></ul>
+<script>
+const {$}=HIW;const C='#n-c',D='#n-d',S='#n-s';
+const P=[['DNS','#0ea5e9'],['TCP','#16a34a'],['TLS','#9333ea'],['HTTP','#ea580c'],['渲染','#64748b']];
+const steps=[
+ {p:0,from:null,to:C,l:'',h:'<b>输入网址 + 回车</b>：浏览器解析出协议 https、域名 example.com、路径 /，并先检查本地 DNS 缓存。'},
+ {p:0,from:C,to:D,l:'example.com 的 IP？',h:'<b>DNS 查询</b>：缓存未命中，向 DNS 解析器询问域名对应的 IP。'},
+ {p:0,from:D,to:C,l:'192.0.2.10',h:'<b>DNS 应答</b>：得到 IP 地址（并按 TTL 缓存起来）。'},
+ {p:1,from:C,to:S,l:'SYN',h:'<b>TCP 第 1 次握手</b>：客户端发 <code>SYN</code>，带上自己的初始序列号。'},
+ {p:1,from:S,to:C,l:'SYN-ACK',h:'<b>TCP 第 2 次握手</b>：服务器回 <code>SYN-ACK</code>：确认你的序号，并带上自己的初始序号。'},
+ {p:1,from:C,to:S,l:'ACK',h:'<b>TCP 第 3 次握手</b>：客户端回 <code>ACK</code>。连接建立，双方都确认「我能发、你能收」。'},
+ {p:2,from:C,to:S,l:'ClientHello',h:'<b>TLS ClientHello</b>：我支持哪些加密套件，附上密钥交换的公开份额，还有要访问的域名（SNI）。'},
+ {p:2,from:S,to:C,l:'ServerHello+证书+Finished',h:'<b>服务器回应</b>：选定套件、给出自己的密钥份额；之后的握手消息已加密，包含<b>证书</b>和 <code>Finished</code>。<span class="note">简化：TLS1.3 里证书本身已在加密通道内传输。</span>'},
+ {p:2,from:C,to:S,l:'Finished',h:'<b>客户端验证证书链</b>（是否受信任、域名是否匹配、是否过期），双方推导出相同的会话密钥，客户端发 <code>Finished</code>。此后数据全部加密。'},
+ {p:3,from:C,to:S,l:'GET / (加密)',h:'<b>HTTP 请求</b>：<code>GET / HTTP/1.1</code> + Host、Cookie 等头，已被加密传输。'},
+ {p:3,from:S,to:C,l:'200 OK + HTML (加密)',h:'<b>HTTP 响应</b>：状态码 200，响应头 + HTML 正文。'},
+ {p:4,from:null,to:C,l:'',h:'<b>渲染</b>：解析 HTML → DOM，解析 CSS → CSSOM，布局、绘制；页面里的图片、脚本会触发新一轮请求。'}];
+const log=$('#log');steps.forEach((s,k)=>{const li=document.createElement('li');li.innerHTML=`<span class=ph style="background:${P[s.p][1]}">${P[s.p][0]}</span>${s.h.replace(/<span.*<\/span>/,'').replace(/<\/?b>/g,'').split('：')[0]}`;li.onclick=()=>st.go(k);log.append(li)});
+const pkt=$('#pkt'),stage=$('#stage');
+function ctr(sel){const r=$(sel).getBoundingClientRect(),b=stage.getBoundingClientRect();return[r.left-b.left+r.width/2,r.top-b.top+r.height/2]}
+let tok=0;
+async function fly(s){const my=++tok;
+ if(!s.from){pkt.style.opacity=0;return}
+ const [x1,y1]=ctr(s.from),[x2,y2]=ctr(s.to);
+ pkt.textContent=s.l;pkt.style.background=P[s.p][1];
+ pkt.style.transition='none';pkt.style.left=x1+'px';pkt.style.top=y1+'px';pkt.style.opacity=1;
+ if(HIW.reduced()){pkt.style.left=x2+'px';pkt.style.top=y2+'px';return}
+ pkt.getBoundingClientRect();
+ pkt.style.transition='left .9s ease,top .9s ease';pkt.style.left=x2+'px';pkt.style.top=y2+'px'}
+const st=HIW.stepper($('#stp'),steps.map(s=>({html:s.h})),(i)=>{
+ [...log.children].forEach((li,k)=>{li.className=k<i?'done':k==i?'cur':''});
+ document.querySelectorAll('.node').forEach(n=>n.classList.remove('act'));
+ if(i<0){pkt.style.opacity=0;return}
+ const s=steps[i];$(s.to).classList.add('act');if(s.from)$(s.from).classList.add('act');fly(s)},{interval:2600});
+</script>
+<div class="nav2"><a href="../index.html">← 目录</a> <a href="02-https.html">下一课：HTTPS 为什么安全 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

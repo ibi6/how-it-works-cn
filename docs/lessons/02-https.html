@@ -1,0 +1,85 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HTTPS 为什么安全 · 图解互联网基本功</title><meta name="description" content="用「带锁的信箱」和「证书链」讲清楚：为什么中间人拿到数据也看不懂。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 2 课</span><h1>HTTPS 为什么安全</h1><p class="lead">用「带锁的信箱」和「证书链」讲清楚：为什么中间人拿到数据也看不懂。</p>
+<div class="tldr"><b>一句话结论</b>HTTPS 用「公开的锁」（非对称加密）安全地约定出一把「只有双方知道的钥匙」（对称密钥），再用这把钥匙加密所有内容；证书则证明「这把锁真的是这个网站的」。</div>
+<h2>🧪 动手试试①：中间人到底能看到什么？</h2>
+<div class="card lab">
+<p>你在咖啡店连了一个免费 WiFi，路由器（中间节点）能看到所有经过它的数据包。输入点内容，切换协议看看它眼里的世界。</p>
+<div class="ctl"><button id="mh" class="on">HTTP（明文）</button><button id="ms">HTTPS（加密）</button></div>
+<div class="ctl"><label>用户名</label><input type="text" id="u" value="xiaoming"><label>密码</label><input type="text" id="p" value="demo-pass-123"><button class="primary" id="send">登录 ▶</button></div>
+<div class="grid g3" style="align-items:stretch">
+ <div class="card"><b>💻 你发出的</b><pre><code id="o1">（点登录）</code></pre></div>
+ <div class="card" style="border-color:var(--warn)"><b>🕵️ 中间节点看到的</b><pre><code id="o2">（点登录）</code></pre><div id="verdict"></div></div>
+ <div class="card"><b>🖥️ 服务器收到的</b><pre><code id="o3">（点登录）</code></pre></div>
+</div>
+<div class="note">简化示意：这里用「与随机密钥异或」代替真实的 AES-GCM / ChaCha20-Poly1305，只为让你直观看到「密文是一堆看不懂的字节」。请不要在任何网页输入真实密码做测试。</div>
+</div>
+
+<h2>🧪 动手试试②：锁与钥匙是怎么配合的？</h2>
+<div class="card lab"><div id="stp"></div>
+<div class="stage" id="scene" style="height:170px;margin-top:10px">
+ <div class="node" id="a" style="left:12%;top:50%"><em>🙋</em>你（浏览器）</div>
+ <div class="node" id="b" style="left:88%;top:50%"><em>🏦</em>网站</div>
+ <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:34px;text-align:center" id="mid">·</div>
+</div></div>
+<div class="note">类比并不完美：真实的 TLS 1.3 使用 (EC)DHE 密钥交换，双方各出一个临时「份额」独立算出同一个密钥，密钥本身<b>不会在网络上传输</b>；这里用「锁信箱」帮助理解「公开信息也能约定出秘密」。</div>
+
+<h2>🧪 动手试试③：证书链——凭什么相信这把锁？</h2>
+<div class="card lab">
+<p>浏览器内置了一批「根证书」。网站出示证书，由中间 CA 签名，中间 CA 又由根 CA 签名。点按钮看浏览器如何验证。</p>
+<div class="ctl"><button id="c1" class="primary">验证正规证书</button><button id="c2">换成伪造证书（自签名）</button><button id="c3">域名对不上</button><button id="c4">证书已过期</button></div>
+<div class="grid g3" id="chain">
+ <div class="card" data-k=root><b>🏛️ 根 CA</b><br><small>内置于系统/浏览器信任库</small><div class="r"></div></div>
+ <div class="card" data-k=mid><b>🏢 中间 CA</b><br><small>由根 CA 签名</small><div class="r"></div></div>
+ <div class="card" data-k=leaf><b>🌐 example.com 证书</b><br><small>由中间 CA 签名</small><div class="r"></div></div>
+</div><p id="cv" aria-live="polite"></p></div>
+
+<h2>为什么中间人没办法</h2>
+<ul><li><b>看不懂</b>：数据用只有你和网站知道的会话密钥加密，中间人只看到密文。</li>
+<li><b>改不了</b>：现代加密套件（AEAD）带认证标签，密文被改动一个比特，接收方就会校验失败并丢弃。</li>
+<li><b>冒充不了</b>：想冒充网站，需要一张由受信任 CA 签发、域名匹配的证书，而这需要证明对该域名的控制权。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「有小锁就代表网站是安全/正规的」</b>小锁只说明<u>连接是加密的、对方确实拥有该域名</u>。钓鱼网站同样可以拿到证书。</div>
+<div><b>「HTTPS 让服务器代码不会有漏洞」</b>HTTPS 保护的是传输途中，不保护服务器本身的逻辑漏洞。</div>
+<div><b>「HTTPS 会隐藏我访问了哪个网站」</b>中间人仍可能看到目标 IP，常常还能看到域名（SNI、DNS）；看不到的是具体路径和内容。</div>
+<div><b>「点掉证书警告问题不大」</b>警告意味着上面「验证」那一步失败了，此时加密再强也可能是在和冒充者通信。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/Security/Transport_Layer_Security">MDN：传输层安全 (TLS)</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc8446">RFC 8446：TLS 1.3</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Overview">MDN：HTTP 概述</a></li></ul>
+<script>
+const {$}=HIW;
+let https=false;
+const hex=a=>[...a].map(x=>x.toString(16).padStart(2,'0')).join(' ');
+function mode(h){https=h;$('#mh').classList.toggle('on',!h);$('#ms').classList.toggle('on',h)}
+$('#mh').onclick=()=>mode(false);$('#ms').onclick=()=>mode(true);
+$('#send').onclick=()=>{
+ const body=`username=${$('#u').value}&password=${$('#p').value}`;
+ const req=`POST /login HTTP/1.1\nHost: example.com\n\n${body}`;
+ $('#o1').textContent=req;$('#o3').textContent=body.replace(/password=.*/,'password=（已收到）');
+ if(!https){$('#o2').textContent=req;$('#verdict').innerHTML='<span class="pill bad">用户名和密码一览无余</span>'}
+ else{const raw=new TextEncoder().encode(req),k=crypto.getRandomValues(new Uint8Array(raw.length)),c=raw.map((b,i)=>b^k[i]);
+  $('#o2').textContent=hex(c.slice(0,48))+' …\n（共 '+c.length+' 字节，无从解读）';
+  $('#verdict').innerHTML='<span class="pill ok">只剩一团乱码</span>'}};
+const steps=[
+ {h:'<b>网站公布「锁」</b>：网站把自己的<b>公钥/密钥份额</b>放在证书里公开给所有人，就像一个人人都能买到、但只有主人能开的<b>开口锁</b>。',m:'🔓',n:'b'},
+ {h:'<b>你验证证书</b>：浏览器确认这把锁的确属于该域名（证书链、有效期、域名匹配），不是骗子的。',m:'📜',n:'a'},
+ {h:'<b>你准备一个秘密</b>：你在本地生成一个只有自己知道的随机数，用它和网站公开的份额「混合」。',m:'🎲',n:'a'},
+ {h:'<b>双方各自算出同一把钥匙</b>：网站用自己的私密数和你公开的份额也能算出相同结果。<b>中间人只看到两个公开份额，算不出钥匙。</b>',m:'🔑',n:'b'},
+ {h:'<b>改用「对称钥匙」传数据</b>：对称加密（如 AES）速度快，适合大量数据；非对称只用来约定钥匙，因为它慢。',m:'✉️🔒',n:'a'},
+ {h:'<b>中间人</b>：看见一堆密文，没有钥匙，既读不懂，也改不了（会被认证标签发现）。',m:'🕵️❌',n:'b'}];
+HIW.stepper($('#stp'),steps,i=>{
+ if(i<0){$('#mid').textContent='·';return}
+ $('#mid').textContent=steps[i].m;
+ ['a','b'].forEach(x=>$('#'+x).classList.toggle('act',x==steps[i].n))},{interval:3200});
+function chain(a){const ks=['root','mid','leaf'];
+ document.querySelectorAll('#chain .card').forEach(c=>{const k=c.dataset.k,i=ks.indexOf(k),r=a[k];c.querySelector('.r').innerHTML=r===true?'<span class="pill ok">✓ 通过</span>':r?`<span class="pill bad">✗ ${r}</span>`:'<span class="pill">未检查</span>';c.style.borderColor=r===true?'var(--ok)':r?'var(--bad)':''})}
+chain({});
+const V=(a,msg,ok)=>{chain(a);$('#cv').innerHTML=ok?'<b class="ok">✔ 浏览器：连接可信，显示小锁。</b> '+msg:'<b class="bad">✘ 浏览器：拦截并显示警告页。</b> '+msg};
+$('#c1').onclick=()=>V({root:true,mid:true,leaf:true},'签名一环扣一环，域名与有效期都对得上。',true);
+$('#c2').onclick=()=>V({root:'不在信任库',mid:'无',leaf:'签发者无法追溯到受信任根'},'自签名证书谁都能生成，所以浏览器不信。',false);
+$('#c3').onclick=()=>V({root:true,mid:true,leaf:'域名不匹配'},'证书是给别的域名的，不能拿来证明 example.com。',false);
+$('#c4').onclick=()=>V({root:true,mid:true,leaf:'已过期'},'证书有有效期，过期后不再被信任。',false);
+</script>
+<div class="nav2"><a href="01-url.html">← 上一课</a> <a href="03-session.html">下一课：Cookie / Session / JWT →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

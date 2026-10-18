@@ -1,0 +1,84 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>浏览器同源策略与 CORS · 图解互联网基本功</title><meta name="description" content="为什么你的请求「明明发出去了」却被浏览器拦住？预检请求又是什么？"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 4 课</span><h1>浏览器同源策略与 CORS</h1><p class="lead">为什么你的请求「明明发出去了」却被浏览器拦住？预检请求又是什么？</p>
+<div class="tldr"><b>一句话结论</b>同源策略是浏览器给「网页脚本」上的锁：默认不让 A 站的脚本读 B 站的响应；CORS 是 B 站用响应头「主动开门」的办法——<b>拦的是「读响应」，不是「发请求」，而且是浏览器在拦，不是服务器</b>。</div>
+<h2>先弄懂「同源」</h2>
+<p>同源 = <b>协议、域名、端口</b>三者完全相同。</p>
+<div class="card" id="so"></div>
+<h2>🧪 动手试试：这个跨域请求为什么被拦？</h2>
+<div class="card lab">
+<div class="grid g2">
+<div><h3>📄 页面（发请求的一方）</h3>
+<div class="ctl"><label>页面来源</label><select id="po"><option>https://app.example.com</option><option>https://app.example.com:8443</option><option>http://app.example.com</option><option>https://other.test</option></select></div>
+<div class="ctl"><label>请求目标</label><select id="to"><option>https://api.example.com</option><option>https://app.example.com</option></select></div>
+<div class="ctl"><label>方法</label><select id="me"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select></div>
+<div class="ctl"><label>Content-Type</label><select id="ct"><option value="">（无）</option><option>text/plain</option><option>application/x-www-form-urlencoded</option><option>application/json</option></select></div>
+<div class="ctl"><label><input type="checkbox" id="hd"> 带自定义请求头（如 X-Token）</label></div>
+<div class="ctl"><label><input type="checkbox" id="cr"> 携带凭证（Cookie）</label></div></div>
+<div><h3>🖥️ 服务器（响应的一方）</h3>
+<div class="ctl"><label>Access-Control-Allow-Origin</label><select id="ao"><option value="">（不设置）</option><option value="*">*</option><option value="https://app.example.com">https://app.example.com</option><option value="https://other.test">https://other.test</option></select></div>
+<div class="ctl"><label>Allow-Methods</label><select id="am"><option value="">（不设置）</option><option>GET, POST</option><option>GET, POST, PUT, DELETE</option></select></div>
+<div class="ctl"><label>Allow-Headers</label><select id="ah"><option value="">（不设置）</option><option>Content-Type</option><option>Content-Type, X-Token</option></select></div>
+<div class="ctl"><label><input type="checkbox" id="ac"> Allow-Credentials: true</label></div></div></div>
+<div class="ctl"><button class="primary" id="go">发送请求 ▶</button></div>
+<ol class="log" id="tl"></ol><p id="vd" aria-live="polite" style="font-size:17px"></p></div>
+<div class="note">简化示意：忽略了 Vary、缓存（Access-Control-Max-Age）、Access-Control-Expose-Headers、私有网络访问等细节；方法比较按区分大小写的精确匹配处理。</div>
+<h2>什么是预检（preflight）？</h2>
+<p>当跨域请求<b>不是「简单请求」</b>时，浏览器会先偷偷发一个 <code>OPTIONS</code> 请求问服务器：「我马上要用 PUT 方法、带 X-Token 头，你允许吗？」服务器同意了，才发真正的请求。</p>
+<p>「简单请求」条件（CORS-safelisted）：方法是 GET / HEAD / POST，且只含安全的头，且 <code>Content-Type</code> 只能是 <code>text/plain</code>、<code>application/x-www-form-urlencoded</code>、<code>multipart/form-data</code> 之一。所以<b>发 JSON（application/json）一定触发预检</b>。</p>
+<h2>防御视角：怎么配才对</h2>
+<ul><li>只对确实需要的来源放行：服务端用<b>白名单</b>校验 Origin 再回写，而不是无脑回写请求里的 Origin。</li>
+<li>带凭证时 <code>Allow-Origin</code> 不能是 <code>*</code>，必须是具体来源，并配合 <code>Allow-Credentials: true</code>。</li>
+<li>CORS <b>不是</b>身份认证；接口本身仍需要鉴权，且不要依赖 CORS 阻止 CSRF（简单请求照样会发到服务器）。</li>
+<li>放行方法和头越少越好。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「CORS 是服务器拦住了我」</b>服务器通常已经处理了请求；是浏览器看到响应头不对，才不把结果交给脚本。用 curl 或服务器端代码请求根本不受 CORS 约束。</div>
+<div><b>「设了 CORS 头就能防别人调我的接口」</b>CORS 只约束浏览器里的网页脚本，不是访问控制。</div>
+<div><b>「Allow-Origin: * 最省事」</b>公开的、不含用户隐私的资源可以；带登录态的接口别这样。</div>
+<div><b>「localhost:3000 和 localhost:8080 是同源」</b>端口不同就是不同源。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/CORS">MDN：跨源资源共享 (CORS)</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/Security/Same-origin_policy">MDN：同源策略</a></li></ul>
+<script>
+const {$}=HIW;
+const O=u=>{const x=new URL(u);return{s:x.protocol,h:x.hostname,p:x.port||(x.protocol==='https:'?'443':'80'),o:x.origin}};
+function so(){const a=O($('#po').value),b=O($('#to').value);
+ const c=(k,l)=>`<span class="pill ${a[k]===b[k]?'ok':'bad'}">${l}：${a[k]} ${a[k]===b[k]?'=':'≠'} ${b[k]}</span>`;
+ $('#so').innerHTML=`页面 <code>${a.o}</code> → 目标 <code>${b.o}</code><br>${c('s','协议')} ${c('h','域名')} ${c('p','端口')}`;}
+['#po','#to'].forEach(x=>$(x).onchange=so);so();
+const SAFE_CT=['text/plain','application/x-www-form-urlencoded','multipart/form-data'];
+$('#go').onclick=()=>{
+ const pg=O($('#po').value),tg=O($('#to').value),me=$('#me').value,ct=$('#ct').value,hd=$('#hd').checked,cr=$('#cr').checked;
+ const ao=$('#ao').value,am=$('#am').value,ah=$('#ah').value,ac=$('#ac').checked;
+ const L=[];let verdict;const add=(t,c)=>L.push(`<li class="done" style="border-color:var(--${c||'line'})">${t}</li>`);
+ if(pg.o===tg.o){add('同源：不受 CORS 限制，直接发送并读取响应。','ok');verdict=[1,'同源请求，一切正常。']}
+ else{
+  add(`跨源：<code>${pg.o}</code> → <code>${tg.o}</code>，需要服务器用 CORS 头授权。`,'warn');
+  const simple=['GET','HEAD','POST'].includes(me)&&!hd&&(!ct||SAFE_CT.includes(ct));
+  const methods=am.split(',').map(s=>s.trim()).filter(Boolean),hds=ah.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  function checkAO(){ if(!ao)return'响应里没有 Access-Control-Allow-Origin';
+   if(cr){ if(ao==='*')return'带凭证的请求不允许 Allow-Origin 为 *';
+          if(!ac)return'带凭证的请求要求响应包含 Access-Control-Allow-Credentials: true';}
+   if(ao!=='*'&&ao!==pg.o)return`Allow-Origin 是 ${ao}，与页面来源 ${pg.o} 不匹配`;return null}
+  let blocked=null;
+  if(!simple){
+   const why=[];if(!['GET','HEAD','POST'].includes(me))why.push('方法 '+me);if(hd)why.push('自定义请求头');if(ct&&!SAFE_CT.includes(ct))why.push('Content-Type '+ct);
+   add(`<b>不是简单请求</b>（${why.join('、')}）→ 浏览器先发 <code>OPTIONS</code> 预检：<code>Origin: ${pg.o}</code>，<code>Access-Control-Request-Method: ${me}</code>${hd||(ct&&!SAFE_CT.includes(ct))?'，<code>Access-Control-Request-Headers: '+[hd?'x-token':'',ct&&!SAFE_CT.includes(ct)?'content-type':''].filter(Boolean).join(', ')+'</code>':''}`,'warn');
+   let e=checkAO();
+   if(!e&&!['GET','HEAD','POST'].includes(me)&&!methods.includes(me))e=`Allow-Methods 未包含 ${me}`;
+   if(!e){const need=[hd?'x-token':'',ct&&!SAFE_CT.includes(ct)?'content-type':''].filter(Boolean);const miss=need.filter(n=>!hds.includes(n));if(miss.length)e='Allow-Headers 未包含 '+miss.join(', ')}
+   if(e){blocked=e;add(`预检失败：${e}。<b>真正的请求不会发出。</b>`,'bad')}
+   else add('预检通过（2xx + 正确的 CORS 头）→ 浏览器发出真正的请求。','ok');
+  }else add('<b>是简单请求</b> → 不需要预检，浏览器<b>直接把请求发给服务器</b>（服务器会收到并处理！）。','warn');
+  if(!blocked){
+   add(`真实请求已发出，服务器返回响应。`,'');
+   const e=checkAO();
+   if(e){blocked=e;add(`浏览器检查响应头：${e} → <b>不把响应交给脚本</b>（控制台报 CORS 错误）。`,'bad')}
+   else add('响应头校验通过 → 脚本可以读取响应。','ok');
+  }
+  verdict=blocked?[0,'被浏览器拦截：'+blocked+'。'+(simple&&!/^预检/.test(blocked)?' 注意：服务器其实<b>已经处理了这个请求</b>，只是你的脚本读不到结果。':'')]:[1,'CORS 校验通过。'];
+ }
+ $('#tl').innerHTML=L.join('');$('#vd').innerHTML=(verdict[0]?'<b class="ok">✔ </b>':'<b class="bad">✘ </b>')+verdict[1]};
+</script>
+<div class="nav2"><a href="03-session.html">← 上一课</a> <a href="05-index.html">下一课：数据库索引为什么快 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

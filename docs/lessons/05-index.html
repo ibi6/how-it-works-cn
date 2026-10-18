@@ -1,0 +1,82 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>数据库索引为什么快 · 图解互联网基本功</title><meta name="description" content="用可视化的 B+ 树，亲眼看「翻遍全表」和「顺着索引找」差多少步。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 5 课</span><h1>数据库索引为什么快</h1><p class="lead">用可视化的 B+ 树，亲眼看「翻遍全表」和「顺着索引找」差多少步。</p>
+<div class="tldr"><b>一句话结论</b>索引就是一本「排好序的目录」：不用一页页翻整本书（全表扫描），而是顺着目录的几层指引直接跳到目标页——B+ 树让层数只有 3~4 层，哪怕有上亿行。</div>
+<h2>🧪 动手试试：B+ 树 vs 全表扫描</h2>
+<div class="card lab">
+<div class="ctl"><label>数值</label><input type="number" id="k" value="36" min="1" max="999" style="width:90px"><button class="primary" id="ins">插入</button><button id="fnd">查找</button><button id="rnd">随机插入一个</button><button id="rst">重置</button></div>
+<div id="tw" style="position:relative;overflow:auto;padding:12px 0"><svg id="ln" style="position:absolute;left:0;top:0;pointer-events:none;overflow:visible"></svg><div id="tree"></div></div>
+<div class="grid g2"><div class="card"><b>📚 全表扫描</b><div id="r1" style="font-size:20px">—</div><small>从第一行开始逐行比较（行按插入顺序存放）</small></div>
+<div class="card"><b>🌲 B+ 树索引</b><div id="r2" style="font-size:20px">—</div><small>从根到叶，每个节点相当于读一个磁盘页</small></div></div>
+<p id="msg" aria-live="polite"></p>
+<div class="note">本树每个节点最多 3 个键（阶数很小，便于观察分裂）。真实数据库一个节点是 8~16KB 的页，能放几百个键。图中叶子之间的 → 表示叶子链表，范围查询（BETWEEN）就靠它顺着扫。</div></div>
+<h2>规模一放大，差距惊人</h2>
+<div class="card"><p>假设每个节点约能放 200 个键（简化估算，实际取决于键大小与页大小）：</p>
+<div style="overflow:auto"><table id="sc" style="width:100%;border-collapse:collapse"></table></div></div>
+<h2>怎么「读懂」这棵树</h2>
+<ul><li><b>内部节点</b>只存「路标」（分隔键），不存数据；<b>叶子节点</b>存真正的键（和行位置/行数据），并串成有序链表——这是 B+ 树区别于 B 树的关键。</li>
+<li><b>插入</b>：找到该去的叶子；放不下了就<b>分裂</b>成两个，把中间键「提」到父节点；父节点满了继续分裂，必要时树长高一层。所以树永远是<b>平衡</b>的，所有叶子同一深度。</li>
+<li><b>代价</b>：索引占空间；每次写入要多维护一棵树。读多写少的列才值得建。</li></ul>
+<h2>什么时候索引会「失效」</h2>
+<ul><li>对列做函数/运算：<code>WHERE YEAR(created)=2026</code>，通常用不上 <code>created</code> 的索引。</li>
+<li>联合索引不满足最左前缀。</li>
+<li>区分度很低的列（如性别）：走索引再回表，未必比全表扫描快。</li>
+<li>用 <code>EXPLAIN</code> 看真实执行计划，不要猜。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「索引越多越好」</b>每个索引都拖慢写入、占磁盘。</div>
+<div><b>「建了索引就一定走索引」</b>由优化器按成本估算决定。</div>
+<div><b>「二叉树就够了，为啥用 B+ 树」</b>二叉树太高（一亿行约 27 层），每层一次磁盘读；B+ 树「矮胖」，层数 3~4。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://dev.mysql.com/doc/refman/8.0/en/mysql-indexes.html">MySQL 文档：索引如何工作（英文）</a></li>
+<li><a href="https://www.postgresql.org/docs/current/indexes-types.html">PostgreSQL 文档：索引类型（英文）</a></li></ul>
+<script>
+const {$}=HIW,M=3;let id=0;
+const mk=l=>({id:id++,leaf:l,keys:[],ch:[],next:null,fresh:false});
+let root,rows;
+function ins(n,k){
+ if(n.leaf){if(n.keys.includes(k))return'dup';n.keys.push(k);n.keys.sort((a,b)=>a-b);
+  if(n.keys.length>M){const r=mk(true);r.keys=n.keys.splice(2);r.next=n.next;n.next=r;n.fresh=r.fresh=true;return{key:r.keys[0],node:r}}return null}
+ let i=n.keys.findIndex(x=>k<x);if(i<0)i=n.keys.length;
+ const res=ins(n.ch[i],k);if(res==='dup')return res;
+ if(res){n.keys.splice(i,0,res.key);n.ch.splice(i+1,0,res.node);
+  if(n.keys.length>M){const r=mk(false);const up=n.keys[2];r.keys=n.keys.splice(3);n.keys.pop();r.ch=n.ch.splice(3);n.fresh=r.fresh=true;return{key:up,node:r}}}
+ return null}
+function clearF(n){n.fresh=false;n.ch.forEach(clearF)}
+function insert(k){clearF(root);const r=ins(root,k);if(r==='dup')return false;
+ if(r){const nr=mk(false);nr.keys=[r.key];nr.ch=[root,r.node];nr.fresh=true;root=nr}rows.push(k);return true}
+function reset(){id=0;root=mk(true);rows=[];[23,5,41,12,30,18,47,52,8,27].forEach(insert);clearF(root);render();$('#r1').textContent=$('#r2').textContent='—';$('#msg').textContent=''}
+function levels(){const L=[[root]];while(!L[L.length-1][0].leaf)L.push(L[L.length-1].flatMap(n=>n.ch));return L}
+function render(path){
+ const t=$('#tree');t.innerHTML='';const L=levels();
+ L.forEach((lv,d)=>{const row=document.createElement('div');row.style.cssText='display:flex;justify-content:center;gap:18px;margin:0 0 34px;flex-wrap:nowrap;min-width:max-content;padding:0 12px';
+  lv.forEach(n=>{const e=document.createElement('div');e.dataset.id=n.id;
+   e.style.cssText=`display:flex;border:2px solid ${n.fresh?'var(--warn)':n.leaf?'var(--brand2)':'var(--brand)'};border-radius:10px;background:var(--card);overflow:hidden;transition:.3s`;
+   e.innerHTML=n.keys.map(k=>`<span data-k="${k}" style="padding:4px 10px;min-width:34px;text-align:center;font-weight:600;border-right:1px solid var(--line)">${k}</span>`).join('');
+   e.lastChild&&(e.lastChild.style.borderRight='none');
+   if(n.leaf&&n.next){const a=document.createElement('span');a.textContent='→';a.style.cssText='padding:4px 6px;color:var(--mute);background:var(--code)';e.append(a)}
+   row.append(e)});t.append(row)});
+ requestAnimationFrame(lines);
+}
+function lines(){const svg=$('#ln'),w=$('#tw'),t=$('#tree');svg.setAttribute('width',t.scrollWidth);svg.setAttribute('height',t.scrollHeight);
+ const wb=t.getBoundingClientRect();let s='';
+ (function walk(n){if(n.leaf)return;const p=$('[data-id="'+n.id+'"]',t).getBoundingClientRect();
+  n.ch.forEach(c=>{const q=$('[data-id="'+c.id+'"]',t).getBoundingClientRect();
+   s+=`<line x1="${p.left+p.width/2-wb.left}" y1="${p.bottom-wb.top}" x2="${q.left+q.width/2-wb.left}" y2="${q.top-wb.top}" stroke="var(--mute)" stroke-width="1.5"/>`;walk(c)})})(root);
+ svg.innerHTML=s}
+addEventListener('resize',lines);
+$('#ins').onclick=()=>{const k=+$('#k').value;if(!k)return;
+ const ok=insert(k);render();$('#msg').innerHTML=ok?(document.querySelector('#tree [style*="var(--warn)"]')?`<b class="warn">插入 ${k}：节点放不下，发生了分裂（橙色边框的是新分裂出的节点）。</b>`:`插入 ${k}：叶子里还有空位，直接放入。`):`<span class="warn">${k} 已存在（本演示不允许重复键）</span>`};
+$('#rnd').onclick=()=>{let k;do{k=1+Math.floor(Math.random()*99)}while(rows.includes(k)&&rows.length<99);$('#k').value=k;$('#ins').click()};
+$('#rst').onclick=reset;
+$('#fnd').onclick=async()=>{const k=+$('#k').value;render();
+ const idx=rows.indexOf(k),scan=idx<0?rows.length:idx+1;
+ let n=root,path=[n];while(!n.leaf){let i=n.keys.findIndex(x=>k<x);if(i<0)i=n.keys.length;n=n.ch[i];path.push(n)}
+ const inLeaf=n.keys.indexOf(k)<0?n.keys.length:n.keys.indexOf(k)+1;
+ $('#r1').innerHTML=`<b>${scan}</b> 次比较`;$('#r2').innerHTML=`<b>${path.length}</b> 个节点（叶子内 ${inLeaf} 次比较）`;
+ for(const p of path){const e=$('[data-id="'+p.id+'"]');e.style.background='color-mix(in srgb,var(--brand) 25%,var(--card))';e.style.transform='scale(1.06)';await HIW.sleep(550)}
+ const f=n.keys.includes(k);$('#msg').innerHTML=f?`<b class="ok">找到 ${k}</b>：全表扫描 ${scan} 步 vs 索引约 ${path.length} 层。数据越多，差距越大。`:`<b class="warn">没有 ${k}</b>：全表扫描要把 ${rows.length} 行全看完才能确定；索引走到叶子就知道没有。`};
+const f=200,tb=$('#sc');tb.innerHTML='<tr style="text-align:left"><th>行数</th><th>全表扫描（平均）</th><th>B+ 树层数</th></tr>'+[1e3,1e5,1e7,1e9].map(N=>`<tr><td style="padding:6px 0;border-top:1px solid var(--line)">${N.toLocaleString()}</td><td style="border-top:1px solid var(--line)">约 ${(N/2).toLocaleString()} 行</td><td style="border-top:1px solid var(--line)"><b>${Math.ceil(Math.log(N)/Math.log(f))}</b> 层</td></tr>`).join('');
+reset();
+</script>
+<div class="nav2"><a href="04-cors.html">← 上一课</a> <a href="06-sqli.html">下一课：参数化查询为什么能防 SQL 注入 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SRC 学习路线图 · 图解互联网基本功</title><meta name="description" content="基本功 → 靶场 → 读公开报告 → 合规参与。每一步都有可勾选的小目标，进度保存在你的浏览器里。"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">第 SRC 5 课</span><h1>SRC 学习路线图</h1><p class="lead">基本功 → 靶场 → 读公开报告 → 合规参与。每一步都有可勾选的小目标，进度保存在你的浏览器里。</p>
+<div class="tldr"><b>一句话结论</b>挖洞不是「会几个工具」，而是<b>懂原理 + 有耐心 + 守规矩</b>。路线很朴素：先把 Web 是怎么工作的搞懂，再在靶场练，再大量读别人的报告，最后在授权范围内小步参与。</div>
+<div class="card"><b>总进度</b><div class="prog" style="margin-top:8px"><i id="tp" style="display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand),var(--brand2));transition:width .3s"></i></div><p id="tm" aria-live="polite"></p></div>
+<div id="rm"></div>
+<h2>心态与习惯</h2>
+<ul><li><b>先守规则，再追技术</b>：一次越界，可能毁掉整个职业路径。</li>
+<li><b>写笔记、写复盘</b>：每个知识点都能讲给别人听，才算会。</li>
+<li><b>从防御视角学</b>：知道怎么修，才真懂为什么会出洞。</li>
+<li><b>接受低回报的前期</b>：热门项目竞争激烈，重复、无效很常见，这是正常的。</li></ul>
+<h2>常见误区</h2>
+<div class="myth">
+<div><b>「先学一堆工具就能上手」</b>工具只是放大器，不懂 HTTP、会话、数据库，就看不懂工具输出。</div>
+<div><b>「只追求高危、赏金」</b>先追求把一个漏洞类型彻底学透。</div>
+<div><b>「别人的报告不需要看」</b>公开报告是最好的免费教材，能学到思路和写法。</div></div>
+<h2>延伸阅读</h2><ul>
+<li><a href="https://owasp.org/www-project-web-security-testing-guide/">OWASP Web 安全测试指南 WSTG（英文）</a></li>
+<li><a href="https://portswigger.net/web-security">PortSwigger Web Security Academy（英文）</a></li>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Web/Security">MDN：Web 安全</a></li>
+<li><a href="https://hackerone.com/hacktivity">HackerOne Hacktivity：公开报告（英文）</a></li>
+<li><a href="https://pentesterlab.com/">PentesterLab（英文，部分免费）</a></li></ul>
+<script>
+const {$}=HIW;
+const S=[['阶段 1：基本功','🧱',[['理解输入网址后发生了什么','01-url.html'],['理解 HTTPS 与证书','02-https.html'],['理解 Cookie / Session / JWT','03-session.html'],['理解同源策略与 CORS','04-cors.html'],['会读 HTTP 请求和响应，会用浏览器开发者工具的「网络」面板'],['会一点 SQL 与一门后端语言，能写出带登录的小网站'],['理解参数化查询','06-sqli.html']]],
+['阶段 2：认识漏洞','🔍',[['读懂常见漏洞的成因与修复','src-2-vulns.html'],['读完 OWASP Top 10 的每一项简介'],['在自己写的小网站里故意制造一个漏洞，再修好']]],
+['阶段 3：靶场练习','🎯',[['按安全清单在本机搭好靶场','src-3-lab.html'],['DVWA 低 → 高等级，对比每级源码'],['完成 Web Security Academy 的若干免费实验室'],['为每类漏洞写一页笔记']]],
+['阶段 4：读公开报告','📖',[['读 20 份已公开的真实报告，记录「成因-影响-修复」'],['学习好报告的结构','src-4-report.html'],['用虚构场景练习写 3 份报告']]],
+['阶段 5：合规参与','🏆',[['读懂并复述一个 SRC 的完整规则','src-1-scope.html'],['选一个规则明确的项目，只测范围内资产，只用自己的账号'],['发现问题 → 最小验证 → 立即报告 → 保密到修复'],['被判重复/无效时，复盘而不是争吵']]]];
+const sv=JSON.parse(localStorage.getItem('hiw-rm')||'{}');let tot=0;
+S.forEach((s,si)=>{const d=document.createElement('div');d.className='card';d.innerHTML=`<h3>${s[1]} ${s[0]}</h3>`;
+ s[2].forEach((it,ii)=>{const k=si+'-'+ii;tot++;const l=document.createElement('label');l.style.cssText='display:block;padding:4px 0';
+  l.innerHTML=`<input type=checkbox ${sv[k]?'checked':''}> ${it[1]?`<a href="${it[1]}">${it[0]}</a>`:it[0]}`;
+  l.firstChild.onchange=e=>{sv[k]=e.target.checked;localStorage.setItem('hiw-rm',JSON.stringify(sv));up()};d.append(l)});$('#rm').append(d)});
+function up(){const n=Object.values(sv).filter(Boolean).length;$('#tp').style.width=n/tot*100+'%';$('#tm').textContent=`已完成 ${n}/${tot}`}up();
+</script>
+<div class="nav2"><a href="src-4-report.html">← 上一课</a> <a href="../index.html">回到目录 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>
