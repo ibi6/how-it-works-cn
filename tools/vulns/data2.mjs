@@ -1,0 +1,97 @@
+export default [
+{id:'v06-upload',title:'不安全的文件上传',short:'「头像」被当成了「程序」来处理',
+one:'文件上传漏洞是指：网站对上传文件的类型、内容、文件名、存放位置和访问方式控制不当，导致不可信文件被服务器当作可执行内容处理，或造成其他危害。',
+analogy:'快递站收包裹。只看包裹上写的"内容：书"就收下并放进能自动运转的机器房，结果包裹里是一台会自己开动的机器。正确做法：开箱检查、换成统一标签、放进只读仓库。',
+cause:['风险来自四个环节：<b>类型判断、文件名、存放位置、访问方式</b>，任何一个信任了客户端，都会出问题。',[
+['只信客户端声明','只检查前端 JS 的扩展名，或只看请求里的 Content-Type（这两个都由客户端提供，可任意伪造）。','// 有漏洞\nif request.files["f"].content_type in ["image/png","image/jpeg"]:\n    save(request.files["f"], "/var/www/html/uploads/" + original_name)'],
+['保留原文件名 / 可执行目录','文件被存进 Web 目录，且以用户给的扩展名保存，服务器可能按扩展名当脚本执行；还可能有路径穿越（见第 8 课）。','// 文件名 shell.php 被保存到 Web 根目录，Web 服务器会执行 .php'],
+['其他危害','SVG/HTML 文件含脚本 → 存储型 XSS；超大文件/压缩炸弹 → 拒绝服务；图片处理库漏洞；文件内容里的敏感信息（EXIF 位置）。','// 允许上传 svg 并从主域名下提供访问 → 同源的 XSS']]],
+harm:[['严重','上传的脚本在服务器执行（远程代码执行）。'],['高','存储型 XSS（上传 HTML/SVG 且同源访问）；覆盖任意文件。'],['中','文件内容校验缺失导致存储垃圾、存储炸弹、隐私信息泄露。'],['决定等级的因素','文件能否被执行或解释、存放域名、访问是否需要认证。']],
+fix:['修复原则：<b>不信客户端、重命名、隔离存放、不可执行</b>。','// 1) 扩展名白名单（而不是黑名单）\nALLOWED = {"png","jpg","jpeg","gif","pdf"}\n\n// 2) 检查真实内容：读文件头（魔数）并用图像库重新编码\nimg = Image.open(f); img.verify(); img = img.convert("RGB"); img.save(out)\n\n// 3) 重命名为随机名，扩展名由服务端根据检测出的类型决定\nname = uuid4().hex + ".png"\n\n// 4) 存放在 Web 根目录之外或对象存储；\n//    通过单独的、无脚本执行能力的域名（如 static-cdn.example）提供，\n//    并设置：Content-Disposition: attachment 或 X-Content-Type-Options: nosniff\n// 5) 限制大小与数量；杀毒；上传目录禁止执行权限'],
+audit:['上传的文件最终存哪里？Web 服务器会不会执行该目录下的文件？','扩展名与 MIME 的判断依据是客户端还是服务端内容检测？','文件名是否被保留？有没有路径穿越与特殊字符处理？','SVG / HTML / PDF 是否允许？从哪个域名访问？同源还是独立域名？'],
+lab:{intro:'模拟一个头像上传。你可以"声明"文件名与类型，以及文件的<b>真实内容类型</b>。（只是字符串逻辑，没有任何真实文件。）',inputs:[{id:'f',label:'文件名',value:'avatar.png'},{id:'ct',label:'声明的 Content-Type',type:'select',options:[['image/png','image/png'],['text/plain','text/plain']]},{id:'real',label:'文件真实内容',type:'select',options:[['img','真正的 PNG 图片'],['script','一段服务器脚本文本（演示）']]}],safeLabel:'白名单 + 内容检测 + 重命名 + 不可执行目录',presets:[['正常图片',{f:'avatar.png',ct:'image/png',real:'img'}],['声明为图片，实为脚本',{f:'avatar.png',ct:'image/png',real:'script'}],['双扩展名',{f:'avatar.php.png',ct:'image/png',real:'script'}],['脚本扩展名',{f:'run.php',ct:'image/png',real:'script'}]],
+run(v,safe){var ext=(v.f.split('.').pop()||'').toLowerCase();if(!safe){var exec=/\.(php|jsp|asp|aspx)(\.|$)/i.test(v.f);var ok=v.ct==='image/png';if(!ok)return{out:'拒绝：类型不是图片',bad:false,note:'这个检查只看客户端声明的头。'};return{out:'已保存：/var/www/html/uploads/'+v.f+'\nWeb 服务器处理方式：'+(exec&&v.real==='script'?'按脚本执行（模拟）':'按静态文件返回'),bad:v.real==='script',note:v.real==='script'?(exec?'❌ 真实内容是脚本，扩展名又会被服务器执行：这就是任意代码执行。':'❌ 校验被轻易骗过（内容与声明不符）。是否可利用取决于服务器配置，但已是缺陷。'):'正常。'}}
+if(['png','jpg','jpeg','gif'].indexOf(ext)<0)return{out:'拒绝：扩展名不在白名单（'+ext+'）',bad:false,note:'✅ 白名单。'};if(v.real!=='img')return{out:'拒绝：文件头不是图片（内容检测失败）',bad:false,note:'✅ 内容检测：不信任声明。'};return{out:'已保存：/data/uploads/'+Math.random().toString(16).slice(2,14)+'.png（Web 根目录之外，随机命名，经图像库重新编码）',bad:false,note:'✅ 即使有人想伪装，也无法在服务器上执行。'}}},
+range:'本地靶场：<b>DVWA</b> File Upload（Low→High 对比）；<b>pikachu</b> 的文件上传（客户端检查/MIME/getimagesize）。靶场里 PHP 环境为本机 Docker，不要把上传目录映射到公网。',
+quiz:[['仅用前端 JS 检查扩展名，安全吗？',['安全，用户看不到代码','不安全，客户端可以绕过前端','安全，如果用了 HTTPS','取决于浏览器'],1,'任何客户端检查都只是体验优化，不是安全控制。'],['以下哪个存放策略最好？',['原名存到 /var/www/html/uploads','随机名存到 Web 根目录外或对象存储','压缩后放根目录','按用户名建目录放根目录'],1,'随机名 + 非 Web 根目录 + 不可执行。'],['为什么 SVG 上传需要特别小心？',['体积大','SVG 是 XML，可内嵌脚本，在同源下打开就是 XSS','SVG 不是图片','没有风险'],1,'可使用独立域名、CSP 或栅格化再提供。']],
+myths:[['「检查了 Content-Type 就行」','这个头由客户端设定，随便写。'],['「黑名单禁止 .php 就安全」','扩展名有大小写、双扩展名、其他可执行类型，白名单才可靠。'],['「图片重新压缩就没事」','要保证重新编码输出，且存放访问方式也要隔离。']],
+report:{title:'【高危】example.test 头像上传未校验真实类型且存放于可执行目录（虚构示例）',asset:'POST https://app.example.test/api/avatar（虚构）',summary:'头像上传仅校验请求头的 Content-Type，文件以原名保存到 Web 目录下。',steps:['在测试账号上传一个内容为纯文本的"演示文件"，将 Content-Type 声明为 image/png，成功。','访问返回 URL，文本被按原样返回，保存路径含原始文件名，说明未重命名未重新编码。','<b>未上传任何可执行内容</b>，只用纯文本证明校验缺失，并向厂商说明如替换为脚本的潜在影响。'],impact:'如目录允许脚本执行，可导致服务器代码执行（需厂商确认，未验证）。',fix:'扩展名白名单 + 魔数检测 + 重编码 + 随机命名 + 存放于不可执行位置。',severity:'高危（校验缺失 + 可能的执行条件）。'},
+links:[['OWASP：文件上传安全速查表','https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html']]},
+
+{id:'v07-cmdi',title:'命令注入',short:'输入被拼进命令行，变成了额外的命令',
+one:'命令注入是指：程序把用户输入拼接到操作系统命令里并交给 shell 执行，用户输入中的特殊字符让 shell 多执行了其他命令。',
+analogy:'你对智能音箱说"播放 ××，然后打开前门"。音箱不分前后，一并执行。设计问题：它应该只把"歌曲名"当作歌曲名。',
+cause:['根因：<b>通过 shell 解析一整条字符串</b>。shell 对 <code>;</code> <code>|</code> <code>&amp;&amp;</code> <code>$()</code> 反引号等有特殊含义。',[
+['拼接后交给 shell','最经典写法。','// 有漏洞：ping 检测功能\nos.system("ping -c 1 " + host)\n// host = "example.com" 正常\n// host 含 ; 或 | 时，后面的内容被当成新命令'],
+['不经意的调用','图片处理、压缩、PDF 转换、Git 操作等调用外部程序时拼接了文件名/参数。','subprocess.run("convert " + filename + " out.png", shell=True)'],
+['参数注入','即使不经过 shell，用户可控的参数开头是 - 也可能被程序当作选项。','subprocess.run(["tar", "xf", user_file])   // user_file 以 - 开头会被当选项']]],
+harm:[['严重','服务器上执行任意命令：读取配置/密钥、植入后门、横向移动。'],['高','受限执行（沙箱、低权限账号）。'],['决定等级的因素','运行账号的权限、是否有回显、是否在容器隔离内。']],
+fix:['修复原则：<b>能不调用命令就不调用；必须调用时，不用 shell，用参数数组，并校验参数</b>。','// 1) 优先使用语言/库的原生功能（如用 HTTP 库代替 curl，用图像库代替 convert）\n\n// 2) 必须调用时：参数数组 + 不经过 shell\nsubprocess.run(["ping", "-c", "1", host], shell=False, timeout=5)\n\n// 3) 严格校验输入格式（白名单正则）\nif not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host): abort(400)\n\n// 4) 用 "--" 终止选项解析：["tar","xf","--",user_file]\n// 5) 低权限账号运行 + 容器隔离 + 出站限制'],
+audit:['搜索：<code>os.system</code>、<code>exec</code>、<code>popen</code>、<code>Runtime.exec</code>、<code>shell=True</code>、反引号。','参数里是否含用户可控内容？是否只是"格式上看起来安全"？','运行进程的账号权限是什么？是否在容器中？'],
+lab:{intro:'一个<b>假的</b>"网络检测"功能，运行在本页面里的模拟命令解释器上（只认识几个假命令，不会执行任何真实命令）。',inputs:[{id:'h',label:'主机名',value:'example.com'}],safeLabel:'参数数组 + 白名单校验',presets:[['正常主机',{h:'example.com'}],['夹带第二条命令',{h:'example.com; ls'}],['用管道',{h:'example.com | whoami'}]],
+run(v,safe){var C={ls:'app.py  config.ini  notes.txt  （假文件）',whoami:'www-data  （假）',id:'uid=33(www-data)  （假）'};if(safe){if(!/^[A-Za-z0-9.-]{1,253}$/.test(v.h))return{out:'400：主机名格式非法',bad:false,note:'✅ 白名单校验直接拒绝；即使通过，也会作为单个参数传递，不被 shell 解释。'};return{out:'argv = ["ping","-c","1","'+v.h+'"]\nPING '+v.h+'：64 bytes… （模拟）',bad:false,note:'✅ 输入只是 ping 的一个参数。'}}
+var cmd='ping -c 1 '+v.h;var parts=cmd.split(/;|\||&&/).map(function(s){return s.trim()});var out=[],bad=false;parts.forEach(function(p,i){var name=p.split(/\s+/)[0];if(i===0)out.push('$ '+p+'\nPING … 64 bytes （模拟）');else{bad=true;out.push('$ '+p+'\n'+(C[name]||'sh: '+name+': not found'))}});return{out:'shell 执行：'+cmd+'\n\n'+out.join('\n'),bad:bad,note:bad?'❌ 分隔符让 shell 把后半段当成了新命令。':'正常输入时一切看起来正常。'}}},
+range:'本地靶场：<b>DVWA</b> 的 Command Injection；<b>pikachu</b> 的 RCE（exec "ping"）。务必只在本地容器里做，不要把靶场映射到公网。',
+quiz:[['subprocess.run(["ping","-c","1",host]) 比 os.system("ping "+host) 安全，是因为？',['更快','不经过 shell，host 只是一个参数','更短','自动加密'],1,'没有 shell 解析，特殊字符就没有特殊含义。'],['"过滤分号"能防命令注入吗？',['能','不能，shell 还有很多种拼接方式','能，加上管道','看运气'],1,'黑名单永远列不完；正确做法是不让 shell 解析。'],['最优先的修复策略？',['过滤','使用库代替外部命令','加防火墙','换语言'],1,'消除调用外部命令的需要。']],
+myths:[['「过滤分号和管道就行」','还有换行、反引号、$() 等多种写法。'],['「命令执行没回显就没危害」','盲注入依然可以执行动作（写文件、外联）。'],['「容器里就不怕」','容器逃逸与凭据泄露仍可能造成危害，隔离只是减小影响。']],
+report:{title:'【严重】example.test 网络诊断功能命令注入（虚构示例）',asset:'POST https://ops.example.test/api/ping {"host": ...}（虚构）',summary:'诊断接口把 host 拼进命令行执行。',steps:['提交正常主机名，响应含 ping 输出。','在<b>授权范围内</b>提交 host 为"正常主机名 + 分隔符 + 一条无害只读命令"（如输出固定字符串的 echo），响应中出现该字符串，证明被 shell 解析。','验证后立即停止：未读取文件、未执行其他命令。'],impact:'服务器任意命令执行。',fix:'改用参数数组调用；host 白名单校验；降权运行；容器隔离。',severity:'严重（任意命令执行）。'},
+links:[['OWASP：OS 命令注入防御','https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html']]},
+
+{id:'v08-traversal',title:'路径穿越（目录遍历）',short:'../ 让你走出了本该待着的文件夹',
+one:'路径穿越是指：程序用用户给的文件名拼出文件路径来读写文件，用户在文件名里用 <code>../</code>（返回上一级目录）跳出了预期目录，读取或写入了其他位置的文件。',
+analogy:'你被允许去图书馆"借阅区"的书架拿书。书单上写"上一层的上一层的……保险室里的文件"，管理员没检查路径就去拿了。',
+cause:['根因：<b>拼接路径后没有验证最终位置仍在允许的目录内</b>。',[
+['下载/预览接口','常见于 /download?file=xxx。','// 有漏洞\npath = "/var/www/files/" + request.args["file"]\nreturn read(path)\n// file 含 ../ 时，实际路径会跳出 files 目录'],
+['解压（Zip Slip）','压缩包内的文件名含 ../，解压时写到了目标目录之外。','for entry in zip.entries:\n    write("/data/unzip/" + entry.name, entry.data)   // entry.name 可含 ../'],
+['编码绕过的错误防御','只在编码前做字符串替换，服务器后续再解码一次。','file = file.replace("../", "")   // 替换一次容易被绕过，且需考虑 URL 解码顺序']]],
+harm:[['高','读取源码、配置文件、密钥、数据库连接串，进而扩大攻击面。'],['严重','写入型穿越（上传/解压）可覆盖任意文件，导致代码执行。'],['中','仅能读取无敏感内容的系统文件。']],
+fix:['修复原则：<b>先规范化（解析 ../、符号链接），再检查结果是否仍在基目录下；或干脆不用用户提供的路径</b>。','// 1) 最佳：不让用户传路径，传 ID，服务端映射到文件\nfile = db.files.get(file_id)\n\n// 2) 必须用文件名时：规范化后校验前缀\nbase = os.path.realpath("/var/www/files")\ntarget = os.path.realpath(os.path.join(base, name))\nif os.path.commonpath([base, target]) != base: abort(403)\n\n// 3) 用框架提供的安全函数（如 send_from_directory），并校验解压路径\n// 4) 进程用最小权限运行，敏感文件不可读（纵深防御）'],
+audit:['所有读写文件、读取模板、解压、下载接口：路径里有没有用户可控片段？','校验是在"规范化之后"吗？URL 编码、双重编码、符号链接、Windows 反斜杠是否处理？','进程账号能读哪些敏感文件？'],
+lab:{intro:'一个"文件下载"功能，服务器上有一份<b>假的</b>文件系统。基目录是 <code>/var/www/files</code>。',inputs:[{id:'f',label:'file 参数',value:'a.txt'}],safeLabel:'规范化后校验仍在基目录内',presets:[['正常文件',{f:'a.txt'}],['向上一层',{f:'../app/config.ini'}],['多级向上',{f:'../../../etc/passwd'}]],
+run(v,safe){var FS={'/var/www/files/a.txt':'你好，这是 a.txt','/var/www/files/b.txt':'这是 b.txt','/var/www/app/config.ini':'[db]\npassword=FAKE-PASSWORD  （假）','/etc/passwd':'root:x:0:0:… （假）'};function norm(p){var out=[];p.split('/').forEach(function(s){if(s===''||s==='.')return;if(s==='..')out.pop();else out.push(s)});return'/'+out.join('/')}
+var raw=v.f;try{raw=decodeURIComponent(raw)}catch(e){}var full=norm('/var/www/files/'+raw);if(safe&&full.indexOf('/var/www/files/')!==0)return{out:'解析后的真实路径：'+full+'\n403：不在允许的目录内',bad:false,note:'✅ 规范化后再检查：../ 已被计算在内。'};var c=FS[full];var escaped=full.indexOf('/var/www/files/')!==0;return{out:'拼接并规范化后的路径：'+full+'\n'+(c?'内容：\n'+c:'404 文件不存在'),bad:escaped&&!!c,note:escaped&&c?'❌ 读到了基目录外的文件。':'正常读取。'}}},
+range:'本地靶场：<b>WebGoat</b> 的 Path Traversal；<b>pikachu</b> 的"不安全文件下载"；<b>DVWA</b> 的 File Inclusion（相关的路径问题）。',
+quiz:[['下列哪种防御最可靠？',['把输入中的 ../ 替换为空','规范化路径后检查是否在基目录下，或用 ID 映射','只允许小写字母','在前端检查'],1,'替换容易被"....//"之类绕过；规范化后校验才是对"最终位置"的检查。'],['Zip Slip 指的是？',['压缩包太大','压缩包内文件名含 ../，解压时写出目录','压缩算法漏洞','密码破解'],1,'写入型路径穿越，危害更大。'],['为什么还要最小权限运行？',['更快','万一被穿越，也读不到敏感文件','为了日志','没有原因'],1,'纵深防御。']],
+myths:[['「把 ../ 替换成空字符串就行」','一次性替换可被嵌套写法绕过，应基于规范化结果判断。'],['「只读功能没什么危害」','配置文件里的密钥一旦泄露，影响远超读文件本身。'],['「Windows 才有这问题」','所有操作系统都有。']],
+report:{title:'【高危】example.test 附件下载接口路径穿越（虚构示例）',asset:'GET https://doc.example.test/download?file=（虚构）',summary:'file 参数直接拼接到基目录，未做规范化校验。',steps:['下载自己上传的附件，确认请求形式为 file=文件名。','在授权范围内，将 file 改为指向上一级目录下<b>一个明确的、非敏感的</b>测试文件（由厂商提供或自己在测试环境创建的标记文件），成功读取。','没有尝试读取任何系统敏感文件。'],impact:'可读取服务器上基目录以外的文件，如配置文件（未验证）。',fix:'ID 映射或规范化后校验；最小权限运行。',severity:'高危。'},
+links:[['OWASP：路径穿越','https://owasp.org/www-community/attacks/Path_Traversal']]},
+
+{id:'v09-xxe',title:'XXE：XML 外部实体注入',short:'XML 解析器被"邀请"去读它不该读的东西',
+one:'XXE 是指：应用用默认配置的 XML 解析器解析用户提供的 XML，而解析器支持"外部实体"功能，于是可以被诱导去读取本地文件或发出网络请求。',
+analogy:'你收到一份表格，里面写着"此处内容请参见抽屉里的文件 X"，秘书老老实实去抽屉取出文件、抄进表格再回给你。XML 的 DTD / 实体就是这种"参见"机制。',
+cause:['XML 标准里允许在文档开头用 DTD 定义"实体"，实体可指向外部资源（本地文件、URL）。很多解析器<b>默认开启</b>这个特性，而业务根本用不到。',[
+['接收 XML 的接口','SOAP、旧式 API、SVG/Office 文档解析、SAML 登录。','// 有漏洞：Java 默认配置\nDocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();\nDocument doc = db.parse(userInputStream);'],
+['概念示例（教科书级）','文档里声明一个实体指向本地文件，再在内容里引用它。解析器会把文件内容替换进去。','<!DOCTYPE order [ <!ENTITY x SYSTEM "file:///etc/hostname"> ]>\n<order><item>&x;</item></order>'],
+['间接场景','上传 docx/xlsx/svg，后台用 XML 解析处理，文件里藏着 DTD。','// 看起来是"图片/文档"功能，底层是 XML 解析']]],
+harm:[['高','读取服务器本地文件（配置、密钥）。'],['高','SSRF：解析器代发请求访问内网。'],['中','"十亿笑声"：实体嵌套膨胀导致拒绝服务。'],['决定等级的因素','能否回显、能读哪些文件、是否有网络出站限制。']],
+fix:['修复原则：<b>禁用 DTD 与外部实体</b>（业务通常完全不需要）。','// Java\nfactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);\nfactory.setFeature("http://xml.org/sax/features/external-general-entities", false);\nfactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);\nfactory.setXIncludeAware(false); factory.setExpandEntityReferences(false);\n\n# Python：使用 defusedxml 代替标准 xml 库\nfrom defusedxml.ElementTree import fromstring\n\n// 其他：能用 JSON 就不用 XML；升级解析库；限制出站网络；最小权限'],
+audit:['项目里哪些地方接收/解析 XML（含 SOAP、SAML、SVG、Office 文档、RSS）？','解析器的安全特性是否被显式设置？框架版本的默认值是什么？','解析器是否来自 defusedxml 等安全封装？'],
+lab:{intro:'一个<b>假的</b> XML 订单解析器，里面有一份假文件系统。左边输入 XML。（解析逻辑是本页面内的简化模拟。）',inputs:[{id:'x',label:'XML 输入',type:'textarea',value:'<order><item>书</item></order>'}],safeLabel:'禁用 DTD / 外部实体',presets:[['正常订单',{x:'<order><item>书</item></order>'}],['声明外部实体（概念）',{x:'<!DOCTYPE order [ <!ENTITY x SYSTEM "file:///etc/hostname"> ]>\n<order><item>&x;</item></order>'}]],
+run(v,safe){var FS={'/etc/hostname':'prod-web-01  （假）'};var ent={};var re=/<!ENTITY\s+(\w+)\s+SYSTEM\s+"file:\/\/([^"]+)"\s*>/g,m;var hasDtd=/<!DOCTYPE/i.test(v.x);if(safe&&hasDtd)return{out:'解析错误：DOCTYPE 被禁止',bad:false,note:'✅ 禁用 DTD：业务用不到，也就没有了攻击面。'};while((m=re.exec(v.x)))ent[m[1]]=m[2];var body=v.x.replace(/<!DOCTYPE[\s\S]*?\]>/,'');var item=/<item>([\s\S]*?)<\/item>/.exec(body);var val=item?item[1]:'';var used=false;val=val.replace(/&(\w+);/g,function(a,n){if(ent[n]!==undefined){used=true;return FS[ent[n]]||'(读取失败)'}return a});return{out:'解析结果：item = '+val,bad:used,note:used?'❌ 解析器读取了本地文件并把内容放进了结果：这就是 XXE 的核心。':'正常解析。'}}},
+range:'本地靶场：<b>WebGoat</b> 的 XXE 课；<b>pikachu</b> 的 XXE；<b>DVWA</b> 暂无，可使用 WebGoat。靶场请只绑 127.0.0.1。',
+quiz:[['防 XXE 最根本的措施是？',['过滤 file:// 字符串','禁用 DTD / 外部实体解析','加 WAF','只接收小文件'],1,'关闭特性比过滤字符串可靠。'],['以下哪个场景可能涉及 XML 解析？',['SAML 登录','SVG 处理','Office 文档导入','以上都可能'],3,'XML 无处不在，需要盘点。'],['能用 JSON 就不用 XML，是因为？',['JSON 更快','JSON 没有实体机制','JSON 更小','没有区别'],1,'减少攻击面。']],
+myths:[['「我没用 XML，所以没事」','你的依赖或文件格式可能在用。'],['「XML 解析器默认就安全」','很多语言的默认并不安全，需显式关闭。'],['「只读文件，没什么」','配置与密钥一旦泄露后果很大。']],
+report:{title:'【高危】example.test 订单导入接口 XXE（虚构示例）',asset:'POST https://erp.example.test/api/import（虚构）',summary:'导入接口使用默认配置的 XML 解析器，接受 DOCTYPE 声明。',steps:['提交含有一个"内部实体"定义（只是普通文本替换）的 XML，响应中出现替换后的文本，证明 DTD 被处理。','不尝试外部实体读取文件；说明理论上可通过外部实体读取本地文件。'],impact:'若启用外部实体，可读取服务器文件、发起内网请求（未验证）。',fix:'禁用 DTD 与外部实体；升级解析库。',severity:'高危（以内部实体验证 DTD 被处理为依据，保守评估）。'},
+links:[['OWASP：XXE 防护速查表','https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html']]},
+
+{id:'v10-deser',title:'不安全的反序列化',short:'把别人寄来的"压缩包"直接还原成了程序里的对象',
+one:'序列化是把对象变成可存储/传输的字节或文本；反序列化是把它还原。不安全的反序列化是指：对不可信的数据执行还原，而还原过程会触发代码（构造器、魔术方法），数据被当成了"指令"。',
+analogy:'你收到一个"组装家具"的快递：包裹里只是零件还好；如果里面是带说明书的"自动机器人，开箱即运行"，你一拆封它就动了。',
+cause:['某些语言的原生序列化格式（Java 序列化、Python pickle、PHP unserialize、.NET BinaryFormatter 等）在还原时可以<b>实例化任意类并调用其方法</b>。程序里已有的类组合起来（称"gadget 链"）就可能产生危险行为。',[
+['把序列化对象放进 Cookie/参数','客户端可控 → 可篡改。','// 有漏洞：Python\nuser = pickle.loads(base64.b64decode(request.cookies["user"]))'],
+['篡改数据本身','即使没有代码执行，反序列化出来的字段（如 role）也被信任。','user = deserialize(cookie)\nif user.role == "admin": ...   // 数据来自客户端，没有签名'],
+['概念示例','序列化数据里指定了类名，反序列化器照做。','{"__class__": "TempCleaner", "path": "/tmp/x"}   // 数据决定了"创建什么对象"']]],
+harm:[['严重','远程代码执行（gadget 链可用时）。'],['高','权限提升：篡改序列化数据里的身份字段。'],['中','拒绝服务（超大/深度嵌套的对象）。'],['决定等级的因素','序列化格式是否能触发代码、依赖库里是否有可用 gadget、数据来源是否可被用户控制。']],
+fix:['修复原则：<b>不要对不可信数据使用原生反序列化；用纯数据格式 + 校验 + 签名</b>。','// 1) 使用 JSON 等"只有数据、没有类型"的格式\nuser = json.loads(body)\n\n// 2) 严格的结构校验（schema），只接受预期字段与类型\nvalidate(user, schema={"name": str, "role": ["user"]})\n\n// 3) 需要放在客户端的数据 → 服务端签名（HMAC）并验证\nif not hmac_ok(data, sig): abort(400)\n// 更好：只在客户端放不透明的会话 ID，数据存服务端\n\n// 4) 如果必须使用原生反序列化：类白名单（如 Java ObjectInputFilter）、隔离、低权限\n// 5) 升级依赖，移除不必要的高风险库'],
+audit:['搜索：<code>pickle.loads</code>、<code>unserialize</code>、<code>ObjectInputStream</code>、<code>BinaryFormatter</code>、<code>yaml.load</code>（非 safe_load）。','反序列化的数据来自哪里？Cookie、参数、消息队列、缓存、上传文件？','是否有完整性校验（签名）？是否有类型白名单？'],
+lab:{intro:'一个<b>玩具</b>反序列化器：数据里可带 <code>__class__</code> 字段指定要创建的类（概念演示，不执行任何真实代码，类的"效果"只是打印一行说明）。',inputs:[{id:'d',label:'客户端 Cookie（JSON）',type:'textarea',value:'{"name":"小明","role":"user"}'}],safeLabel:'纯数据 JSON + 字段白名单 + 签名校验',presets:[['正常数据',{d:'{"name":"小明","role":"user"}'}],['篡改身份字段',{d:'{"name":"小明","role":"admin"}'}],['指定要创建的类（概念）',{d:'{"__class__":"TempCleaner","path":"/tmp/x"}'}]],
+run(v,safe){var o;try{o=JSON.parse(v.d)}catch(e){return{out:'解析失败：不是合法 JSON',bad:false,note:'格式错误被拒绝。'}}
+if(safe){return{out:'签名校验：该 Cookie 没有有效签名 → 拒绝\n（即使有签名，也只接受字段 name/role，且 role 只允许 user）',bad:false,note:'✅ 数据不被信任为"指令"，也不信任其中的身份字段。'}}
+var log=[];if(o.__class__==='TempCleaner'){log.push('→ 按数据中的类名创建对象 TempCleaner(path='+o.path+')');log.push('→ 对象的析构逻辑被触发：（模拟）删除 '+o.path);return{out:log.join('\n'),bad:true,note:'❌ 数据决定了"创建什么对象、触发什么逻辑"：这就是反序列化危险的本质。真实世界的利用更复杂，但原理相同。'}}
+log.push('→ 还原用户：'+o.name+'，角色：'+o.role);return{out:log.join('\n'),bad:o.role==='admin',note:o.role==='admin'?'❌ 客户端自己改了 role，服务器照单全收：即使没有代码执行，也是越权。':'正常。'}}},
+range:'本地靶场：<b>WebGoat</b> 的 Insecure Deserialization 课；<b>pikachu</b> 的 PHP 反序列化。务必在本地容器内，只理解原理，不碰真实系统。',
+quiz:[['最稳妥的做法是？',['用 pickle 并加过滤','不对不可信数据使用原生反序列化，改用 JSON + 校验 + 签名','压缩数据','Base64 编码'],1,'Base64 只是编码，不是保护。'],['Cookie 里放 JSON {role:"user"} 且没签名，问题是？',['没问题','可被客户端篡改成 admin','Cookie 太长','Cookie 太短'],1,'客户端可控的数据必须签名或不放。'],['gadget 链指的是？',['一种加密','程序里已有类的组合，在反序列化时触发危险行为','一种漏洞扫描','一种网络设备'],1,'攻击者不需要自己写代码，利用现成的类即可。']],
+myths:[['「Base64 后就看不懂了」','编码不是加密，更不是签名。'],['「内部系统间传输没事」','消息队列/缓存被污染时同样危险。'],['「加黑名单就好」','gadget 层出不穷，黑名单追不上。']],
+report:{title:'【严重】example.test 会话 Cookie 使用不安全反序列化（虚构示例）',asset:'Cookie: prefs=...（虚构）',summary:'服务端用原生反序列化还原 Cookie，且无签名。',steps:['解码 Cookie，发现是原生序列化格式，其中含有 role 字段。','修改自己测试账号 Cookie 中的无害字段（如界面主题）并重放，服务器接受并回显新值，证明无完整性校验。','<b>未尝试代码执行</b>；仅说明原理上可能。'],impact:'可篡改身份字段；在存在 gadget 时可能导致代码执行（未验证）。',fix:'改用 JSON + 签名；或会话数据存服务端。',severity:'高危~严重（保守按高危提交，说明潜在影响）。'},
+links:[['OWASP：反序列化速查表','https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html']]}
+];

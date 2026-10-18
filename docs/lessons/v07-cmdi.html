@@ -1,0 +1,45 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>命令注入 · 图解互联网基本功</title><meta name="description" content="输入被拼进命令行，变成了额外的命令"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 7/15</span><h1>命令注入</h1><p class="lead">输入被拼进命令行，变成了额外的命令</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>命令注入是指：程序把用户输入拼接到操作系统命令里并交给 shell 执行，用户输入中的特殊字符让 shell 多执行了其他命令。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你对智能音箱说"播放 ××，然后打开前门"。音箱不分前后，一并执行。设计问题：它应该只把"歌曲名"当作歌曲名。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>根因：<b>通过 shell 解析一整条字符串</b>。shell 对 <code>;</code> <code>|</code> <code>&amp;&amp;</code> <code>$()</code> 反引号等有特殊含义。</p><div class="card ctype"><h4>拼接后交给 shell</h4><p>最经典写法。</p><pre><code>// 有漏洞：ping 检测功能
+os.system(&quot;ping -c 1 &quot; + host)
+// host = &quot;example.com&quot; 正常
+// host 含 ; 或 | 时，后面的内容被当成新命令</code></pre></div><div class="card ctype"><h4>不经意的调用</h4><p>图片处理、压缩、PDF 转换、Git 操作等调用外部程序时拼接了文件名/参数。</p><pre><code>subprocess.run(&quot;convert &quot; + filename + &quot; out.png&quot;, shell=True)</code></pre></div><div class="card ctype"><h4>参数注入</h4><p>即使不经过 shell，用户可控的参数开头是 - 也可能被程序当作选项。</p><pre><code>subprocess.run([&quot;tar&quot;, &quot;xf&quot;, user_file])   // user_file 以 - 开头会被当选项</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>服务器上执行任意命令：读取配置/密钥、植入后门、横向移动。</span></div><div class="l-高"><b>高</b><span>受限执行（沙箱、低权限账号）。</span></div><div class="l-x"><b>决定等级的因素</b><span>运行账号的权限、是否有回显、是否在容器隔离内。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>能不调用命令就不调用；必须调用时，不用 shell，用参数数组，并校验参数</b>。</p><pre><code>// 1) 优先使用语言/库的原生功能（如用 HTTP 库代替 curl，用图像库代替 convert）
+
+// 2) 必须调用时：参数数组 + 不经过 shell
+subprocess.run([&quot;ping&quot;, &quot;-c&quot;, &quot;1&quot;, host], shell=False, timeout=5)
+
+// 3) 严格校验输入格式（白名单正则）
+if not re.fullmatch(r&quot;[A-Za-z0-9.-]{1,253}&quot;, host): abort(400)
+
+// 4) 用 &quot;--&quot; 终止选项解析：[&quot;tar&quot;,&quot;xf&quot;,&quot;--&quot;,user_file]
+// 5) 低权限账号运行 + 容器隔离 + 出站限制</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>搜索：<code>os.system</code>、<code>exec</code>、<code>popen</code>、<code>Runtime.exec</code>、<code>shell=True</code>、反引号。</li><li>参数里是否含用户可控内容？是否只是"格式上看起来安全"？</li><li>运行进程的账号权限是什么？是否在容器中？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> 的 Command Injection；<b>pikachu</b> 的 RCE（exec "ping"）。务必只在本地容器里做，不要把靶场映射到公网。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「过滤分号和管道就行」</b>还有换行、反引号、$() 等多种写法。</div><div><b>「命令执行没回显就没危害」</b>盲注入依然可以执行动作（写文件、外联）。</div><div><b>「容器里就不怕」</b>容器逃逸与凭据泄露仍可能造成危害，隔离只是减小影响。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【严重】example.test 网络诊断功能命令注入（虚构示例）
+<b>目标/接口：</b>POST https://ops.example.test/api/ping {"host": ...}（虚构）
+<b>漏洞概述：</b>诊断接口把 host 拼进命令行执行。
+<b>复现步骤：</b>
+1. 提交正常主机名，响应含 ping 输出。
+2. 在<b>授权范围内</b>提交 host 为"正常主机名 + 分隔符 + 一条无害只读命令"（如输出固定字符串的 echo），响应中出现该字符串，证明被 shell 解析。
+3. 验证后立即停止：未读取文件、未执行其他命令。
+<b>影响：</b>服务器任意命令执行。
+<b>修复建议：</b>改用参数数组调用；host 白名单校验；降权运行；容器隔离。
+<b>自评等级：</b>严重（任意命令执行）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html">OWASP：OS 命令注入防御</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个<b>假的</b>\"网络检测\"功能，运行在本页面里的模拟命令解释器上（只认识几个假命令，不会执行任何真实命令）。","inputs":[{"id":"h","label":"主机名","value":"example.com"}],"safeLabel":"参数数组 + 白名单校验","presets":[["正常主机",{"h":"example.com"}],["夹带第二条命令",{"h":"example.com; ls"}],["用管道",{"h":"example.com | whoami"}]]},{run(v,safe){var C={ls:'app.py  config.ini  notes.txt  （假文件）',whoami:'www-data  （假）',id:'uid=33(www-data)  （假）'};if(safe){if(!/^[A-Za-z0-9.-]{1,253}$/.test(v.h))return{out:'400：主机名格式非法',bad:false,note:'✅ 白名单校验直接拒绝；即使通过，也会作为单个参数传递，不被 shell 解释。'};return{out:'argv = ["ping","-c","1","'+v.h+'"]\nPING '+v.h+'：64 bytes… （模拟）',bad:false,note:'✅ 输入只是 ping 的一个参数。'}}
+var cmd='ping -c 1 '+v.h;var parts=cmd.split(/;|\||&&/).map(function(s){return s.trim()});var out=[],bad=false;parts.forEach(function(p,i){var name=p.split(/\s+/)[0];if(i===0)out.push('$ '+p+'\nPING … 64 bytes （模拟）');else{bad=true;out.push('$ '+p+'\n'+(C[name]||'sh: '+name+': not found'))}});return{out:'shell 执行：'+cmd+'\n\n'+out.join('\n'),bad:bad,note:bad?'❌ 分隔符让 shell 把后半段当成了新命令。':'正常输入时一切看起来正常。'}}}));
+VQUIZ([["subprocess.run([\"ping\",\"-c\",\"1\",host]) 比 os.system(\"ping \"+host) 安全，是因为？",["更快","不经过 shell，host 只是一个参数","更短","自动加密"],1,"没有 shell 解析，特殊字符就没有特殊含义。"],["\"过滤分号\"能防命令注入吗？",["能","不能，shell 还有很多种拼接方式","能，加上管道","看运气"],1,"黑名单永远列不完；正确做法是不让 shell 解析。"],["最优先的修复策略？",["过滤","使用库代替外部命令","加防火墙","换语言"],1,"消除调用外部命令的需要。"]]);</script>
+<div class="nav2"><a href="v06-upload.html">← 不安全的文件上传</a> <a href="v08-traversal.html">路径穿越 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

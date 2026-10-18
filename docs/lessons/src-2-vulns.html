@@ -15,6 +15,7 @@
 <div class="ctl"><label><input type="checkbox" id="chk"> 服务端校验「订单归属」</label></div>
 <div class="ctl" id="oid"></div><pre><code id="oresp">点击订单号</code></pre>
 <div class="note">只靠「ID 不容易猜」不是防护——ID 是可以被枚举、泄露的。根本做法是每次访问都做授权检查。</div></div>
+<div class="note"><b>想学得更细？</b>每种漏洞都有一整课（定义、类比、有漏洞的代码、修复、审计视角、实验、测验、报告模板）：<a href="vulns.html">进入「常见漏洞详解」15 课 →</a></div>
 <h2>常见类型速览</h2>
 <div class="ctl" id="tabs"></div><div class="card" id="vc"></div>
 <h2>共通的防御思路</h2>
@@ -55,4 +56,4 @@ const V=[
 V.forEach((v,i)=>{const b=document.createElement('button');b.textContent=v[0];b.onclick=()=>{[...$('#tabs').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');
  $('#vc').innerHTML=`<h3>${v[0]}</h3><p><b>为什么会出现：</b>${v[1]}</p><p><b>可能的影响：</b>${v[2]}</p><p><b class="ok">怎么修：</b>${v[3]}</p>`};$('#tabs').append(b);if(!i)b.click()});
 </script>
-<div class="nav2"><a href="src-1-scope.html">← 上一课</a> <a href="src-3-lab.html">下一课：合法练习环境 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>
+<div class="nav2"><a href="src-1-scope.html">← 上一课</a> <a href="vulns.html">漏洞详解 15 课 →</a> <a href="src-3-lab.html">下一课：合法练习环境 →</a></div></main><footer>图解互联网基本功 · MIT · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

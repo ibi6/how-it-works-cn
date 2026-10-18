@@ -1,0 +1,43 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>敏感信息泄露 · 图解互联网基本功</title><meta name="description" content="不该给的，多给了"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 14/15</span><h1>敏感信息泄露</h1><p class="lead">不该给的，多给了</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>敏感信息泄露是指：应用在响应、错误页、静态文件、日志或代码仓库里，暴露了不该对外的数据，如密钥、内部路径、用户隐私、调试信息。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">前台回答访客时，顺手把内部通讯录、保险柜密码贴在桌上，还把写着密码的便签丢进了没有碎纸机的垃圾桶。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>泄露往往不是"黑客破解"，而是<b>开发或运维时的疏忽</b>：</p><div class="card ctype"><h4>接口多返回</h4><p>直接把数据库对象序列化返回，包含密码哈希、内部字段、他人的联系方式。</p><pre><code>// 有漏洞
+return jsonify(user)     // user 里含 password_hash、phone、internal_note</code></pre></div><div class="card ctype"><h4>错误与调试信息</h4><p>生产环境开着 debug；错误页显示堆栈、SQL、文件路径、版本。</p><pre><code>app.run(debug=True)      // 生产环境</code></pre></div><div class="card ctype"><h4>遗留文件与仓库</h4><p>备份文件（.bak、.zip）、.git 目录、.env、日志、前端 JS 里硬编码密钥、公开代码仓库里的 Token。</p><pre><code>/static/.git/config   /backup.zip   /.env</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>泄露可直接使用的凭证（云密钥、数据库密码）。</span></div><div class="l-高"><b>高</b><span>大量用户隐私（手机号、身份证、地址）。</span></div><div class="l-中"><b>中</b><span>内部结构、版本号、路径，为其他攻击提供情报。</span></div><div class="l-低"><b>低</b><span>极少量非敏感的版本信息（常常不收）。</span></div><div class="l-x"><b>决定等级的因素</b><span>信息的敏感度、数量、是否可直接利用、是否需要认证。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>最小暴露：只返回必须的；生产环境关闭调试；密钥不进代码</b>。</p><pre><code>// 1) 接口用专门的输出对象（DTO），只列出需要的字段
+return {&quot;id&quot;: u.id, &quot;name&quot;: u.name}
+
+// 2) 生产环境：关闭 debug；统一错误页，只返回请求 ID，详细信息写服务端日志
+
+// 3) 部署：Web 服务器禁止访问隐藏文件与备份；发布流程剔除 .git/.env/备份
+
+// 4) 密钥管理：环境变量或密钥管理服务；仓库开启 secret scanning；一旦泄露立即轮换
+
+// 5) 日志脱敏：不记录密码、令牌、完整身份证号
+// 6) 响应头中去掉不必要的版本信息（辅助）</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>接口响应与数据库模型对比：是不是整个对象都返回了？</li><li>生产配置：debug、堆栈回显、目录列表。</li><li>仓库与构建产物：有没有 .env、密钥、.git、备份、source map？</li><li>日志里是否有敏感值？密钥是否被硬编码？轮换机制是否存在？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>pikachu</b> 的"敏感信息泄露"（源码注释、接口返回）；<b>WebGoat</b> 的相关课；自己的项目里跑一次 secret scanning。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「删了文件就没事」</b>Git 历史、缓存、镜像都可能留着副本。</div><div><b>「前端不显示就行」</b>响应里有，别人就能看到。</div><div><b>「版本号泄露不算漏洞」</b>单独通常低危，但会降低攻击成本；具体看规则。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【中危】example.test 用户信息接口返回多余敏感字段（虚构示例）
+<b>目标/接口：</b>GET https://app.example.test/api/users/me（虚构）
+<b>漏洞概述：</b>接口除展示字段外还返回 password_hash 与 internal_note，前端未使用。
+<b>复现步骤：</b>
+1. 登录自己的测试账号，查看 /api/users/me 响应。
+2. 响应包含密码哈希、内部备注、完整手机号。
+3. 只查看自己账号的数据。
+<b>影响：</b>若与越权漏洞组合，可批量获取他人数据；哈希本身可能被离线破解。
+<b>修复建议：</b>使用输出白名单；移除敏感字段；手机号脱敏。
+<b>自评等级：</b>中危。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html">OWASP：错误处理速查表</a></li><li><a href="https://owasp.org/Top10/A02_2021-Cryptographic_Failures/">OWASP Top 10 A02 加密失败（含敏感数据暴露）</a></li></ul>
+<script>VLAB(Object.assign({"intro":"选一个请求，对比\"不安全\"与\"安全\"实现的响应。数据全部是编造的。","inputs":[{"id":"r","label":"请求","type":"select","options":[["me","GET /api/users/me（个人资料）"],["err","GET /api/orders/abc（触发错误）"],["git","GET /static/.git/config（遗留文件）"]]}],"safeLabel":"最小暴露 + 统一错误 + 禁止隐藏文件","presets":[]},{run(v,safe){var R={me:[JSON.stringify({id:7,name:'小明',phone:'13800001234',password_hash:'$2b$…FAKE',internal_note:'VIP，欠费两个月',is_admin:false},null,1),JSON.stringify({id:7,name:'小明',phone:'138****1234'},null,1),'返回了密码哈希、内部备注、完整手机号',''],err:['HTTP 500\nTraceback (most recent call last):\n  File "/srv/app/orders.py", line 42\n    db.query("SELECT * FROM orders WHERE id=\'abc\'")\nOperationalError: syntax… (假)\nFramework 3.1.4  DB: mysql 5.7','HTTP 400\n{"error":"请求无效","request_id":"8f3a-…"}','暴露了内部路径、SQL 语句、版本号',''],git:['HTTP 200\n[remote "origin"]\n  url = https://token-FAKE@git.example.test/team/app.git','HTTP 404','泄露了仓库地址甚至凭证（假）','']};var r=R[v.r];return{out:safe?r[1]:r[0],bad:!safe,note:safe?'✅ 只给了必要的信息。':'❌ '+r[2]+'。'}}}));
+VQUIZ([["接口返回数据最好怎样处理？",["直接序列化数据库对象","用 DTO 白名单字段","返回所有字段交给前端筛选","加密返回"],1,"前端筛选不能阻止别人读响应。"],["生产环境错误页应该？",["显示完整堆栈便于排查","显示通用错误与请求 ID，细节写服务端日志","什么都不返回","显示 SQL"],1,"细节只给自己人。"],["不小心把密钥提交到公开仓库，第一步是？",["删除提交","立刻轮换（作废并更换）密钥","改仓库名","不用管"],1,"历史记录可能已被抓取，删除不等于安全。"]]);</script>
+<div class="nav2"><a href="v13-auth.html">← 弱口令与认证缺陷</a> <a href="v15-misconfig.html">安全配置错误 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

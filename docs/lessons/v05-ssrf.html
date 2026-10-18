@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SSRF 服务端请求伪造 · 图解互联网基本功</title><meta name="description" content="让服务器替你去访问&quot;你自己访问不了&quot;的地方"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 5/15</span><h1>SSRF 服务端请求伪造</h1><p class="lead">让服务器替你去访问"你自己访问不了"的地方</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>SSRF 是指：服务端会根据用户提供的 URL 去发起请求，攻击者借此让服务器去访问内网、本机或云元数据等"外部无法直接访问"的资源。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">公司前台有一条规矩："访客说想要哪份文件，我就进内部档案室去拿"。如果访客说"请把保险柜里的文件拿来"，前台照办了。前台有内部通行证，而访客没有。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>常见于"远程拉取"类功能：URL 预览/抓取、图片转存、Webhook、导入、PDF 生成、第三方登录回调。服务器所处的网络位置有特权。</p><div class="card ctype"><h4>直接使用 URL</h4><p>没做任何限制。</p><pre><code>// 有漏洞
+url = request.args[&quot;url&quot;]
+img = http_get(url)        // 想访问谁就访问谁
+return img</code></pre></div><div class="card ctype"><h4>弱校验</h4><p>只检查字符串，如"URL 以 example.com 开头"或黑名单 127.0.0.1。</p><pre><code>if &quot;127.0.0.1&quot; not in url:      // 字符串黑名单
+    http_get(url)
+// 域名解析、进制写法、跳转都可能绕过字符串检查</code></pre></div><div class="card ctype"><h4>跟随跳转</h4><p>校验了第一个 URL，但允许 302 跳到别处。</p><pre><code>http_get(url, follow_redirects=True)   // 跳转目的地未校验</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>访问云厂商元数据服务取得临时凭证，进而控制云资源；访问内网管理后台。</span></div><div class="l-高"><b>高</b><span>探测内网存活服务、读取内网接口数据。</span></div><div class="l-中"><b>中</b><span>只能访问外网、且无回显（Blind SSRF），可用于端口/存活探测。</span></div><div class="l-x"><b>决定等级的因素</b><span>能否回显响应内容、能访问的内网是什么、是否在云环境、能否使用非 HTTP 协议。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>只允许访问明确列出的目标；解析后校验 IP；不跟随未校验的跳转</b>。</p><pre><code>// 1) 能用白名单就用白名单（只允许已知域名）
+ALLOW = {&quot;img.example.com&quot;, &quot;cdn.example.com&quot;}
+
+// 2) 必须开放时：自己解析 DNS，对&quot;解析后的 IP&quot;做校验，再用该 IP 连接（防 DNS 重绑定）
+ip = resolve(host)
+if ip.is_private or ip.is_loopback or ip.is_link_local: abort(400)
+
+// 3) 仅允许 http/https，禁止 file/gopher 等
+// 4) 禁用自动跳转，或每一跳都重复校验
+// 5) 出站网络隔离：抓取服务放在无内网访问权限的子网；云上启用更安全的元数据访问方式（如 IMDSv2）
+// 6) 不把响应原样回显给用户</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>找所有"服务器去请求用户给的地址"的功能：预览、导入、回调、截图、文件转存。</li><li>校验是在字符串层面，还是解析后的 IP 层面？跳转、IPv6、DNS 重绑定是否考虑？</li><li>抓取服务所在网络是否可访问内网与元数据地址？</li><li>错误信息是否区分"连得上/连不上"（会变成探测器）？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>WebGoat</b> 有 SSRF 课；<b>pikachu</b> 的 SSRF（curl / file_get_contents）。可在本机用两个容器搭一个"内部服务"做实验，务必绑 127.0.0.1。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「只允许 https 就安全」</b>内网的 https 服务依然存在。</div><div><b>「过滤了 localhost / 127.0.0.1 就够了」</b>IP 有多种写法，域名可解析到内网，应在解析后校验。</div><div><b>「内网服务没有认证因为在内网」</b>SSRF 正是把"可信内网"变成攻击面。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 链接预览功能 SSRF 可访问内网服务（虚构示例）
+<b>目标/接口：</b>POST https://app.example.test/api/preview {"url": ...}（虚构）
+<b>漏洞概述：</b>预览接口会由服务端请求用户提供的 URL 并回显内容，未限制目标地址。
+<b>复现步骤：</b>
+1. 提交指向自己控制的服务器的 URL，在自己服务器日志看到来自目标的出站请求，证明服务端会发起请求。
+2. 用<b>规则允许范围内</b>的最小验证：请求一个明确属于测试环境的内部健康检查地址，响应被回显。
+3. 未访问元数据、未读取任何凭证或业务数据。
+<b>影响：</b>可访问内网服务；云环境下可能进一步取得凭证（未验证）。
+<b>修复建议：</b>目标白名单；解析后 IP 校验；禁用跳转；出站隔离；不回显响应。
+<b>自评等级：</b>高危（可内网访问且有回显）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP：SSRF 防护速查表</a></li><li><a href="https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/">OWASP Top 10 A10 SSRF</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个\"网页预览\"功能。服务器所在的<b>假网络</b>里有公网图片、内网管理页和云元数据服务（全部是编造的假数据）。看看对不同 URL，两种实现的结果。","inputs":[{"id":"u","label":"预览 URL","value":"http://img.example.com/logo.png"}],"safeLabel":"白名单 + 内网地址拦截","presets":[["正常外部图片",{"u":"http://img.example.com/logo.png"}],["内网管理页",{"u":"http://10.0.0.5/admin"}],["本机服务",{"u":"http://127.0.0.1:8080/"}],["云元数据（假）",{"u":"http://169.254.169.254/latest/meta-data/"}]]},{run(v,safe){var NET={'img.example.com':'[图片数据 …PNG…]','10.0.0.5':'内部管理后台（假）：用户管理 / 数据导出','127.0.0.1':'本机调试接口（假）：/status ok','169.254.169.254':'元数据（假）：{"AccessKeyId":"FAKE-ACCESS-KEY","Token":"fake-token"}'};var m=/^https?:\/\/([^\/:]+)/i.exec(v.u);if(!m)return{out:'400 非法 URL',bad:false,note:'仅接受 http/https。'};var h=m[1].toLowerCase();var internal=/^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);if(safe){if(h!=='img.example.com')return{out:'403 目标不在白名单：'+h+(internal?'（内网/保留地址）':''),bad:false,note:'✅ 白名单优先；即使开放，也在解析后拦截内网/回环/链路本地地址。'}}
+var d=NET[h];return{out:d?'服务器代为请求 '+v.u+'\n响应：'+d:'服务器请求失败：无法连接',bad:!safe&&internal&&!!d,note:(!safe&&internal&&d)?'❌ 服务器把"外部看不到的内部内容"带给了用户：这就是 SSRF。':'正常的外部请求。'}}}));
+VQUIZ([["防 SSRF 最稳妥的做法是？",["拦截含 127.0.0.1 的 URL","域名/目标白名单 + 解析后校验 IP + 出站隔离","只允许 https","限制 URL 长度"],1,"字符串黑名单极易被绕过。"],["为什么要禁止/逐跳校验 HTTP 跳转？",["跳转很慢","合法外部地址可以 302 到内网地址","跳转不安全因为 http","没有原因"],1,"校验的是\"最终请求到哪里\"。"],["无回显的 SSRF 还有危害吗？",["没有","有：可探测内网、触发内网接口（带副作用的请求）","只有 DoS","仅信息泄露"],1,"Blind SSRF 也能打到内网里\"一个 GET 就生效\"的接口。"]]);</script>
+<div class="nav2"><a href="v04-csrf.html">← CSRF 跨站请求伪造</a> <a href="v06-upload.html">不安全的文件上传 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

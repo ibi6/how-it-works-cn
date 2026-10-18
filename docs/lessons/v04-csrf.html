@@ -1,0 +1,45 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CSRF 跨站请求伪造 · 图解互联网基本功</title><meta name="description" content="借你的登录态，替你做了你没想做的事"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 4/15</span><h1>CSRF 跨站请求伪造</h1><p class="lead">借你的登录态，替你做了你没想做的事</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>CSRF 是指：你登录了 A 网站后，访问了恶意的 B 网站，B 让你的浏览器向 A 发出一个请求；浏览器会自动附上 A 的 Cookie，A 以为是你本人操作。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你在银行有一张"自动盖章的授权卡"（Cookie），只要有人拿着你的名义的单子到柜台，卡就会自动盖章。骗子给你寄一张看似无害的传单，传单背面其实是"转账单"，你一"翻面"（点击/加载），章就盖上了。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>根因：<b>浏览器自动携带 Cookie</b>，而服务器仅凭 Cookie 判断"是不是你"，无法区分"你主动发的"与"别的网站诱导你发的"。</p><div class="card ctype"><h4>改状态用 GET</h4><p>GET 请求会被图片、链接等无需交互地触发。</p><pre><code>// 有漏洞
+GET /transfer?to=bob&amp;amount=100   // 仅靠 Cookie 认证</code></pre></div><div class="card ctype"><h4>POST 无令牌</h4><p>外站的表单可以自动提交到你的站点。</p><pre><code>// 有漏洞：POST 改密码，只验证 Cookie
+POST /user/password   body: new=...</code></pre></div><div class="card ctype"><h4>Cookie 无 SameSite</h4><p>老的默认行为是跨站也会带 Cookie；现代浏览器默认 Lax 但不应依赖默认值。</p><pre><code>Set-Cookie: sid=abc   // 未显式声明</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-高"><b>高</b><span>资金/账号相关操作（转账、改密码绑定邮箱）可被伪造 → 账号接管。</span></div><div class="l-中"><b>中</b><span>修改资料、发帖、关注等有一定影响的写操作。</span></div><div class="l-低"><b>低</b><span>登出、无关紧要的偏好设置（多数 SRC 不收）。</span></div><div class="l-x"><b>决定等级的因素</b><span>被伪造的操作有多敏感、是否需要额外验证（原密码/验证码）、有无现成防护被绕过。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>让服务器能确认"这个请求确实来自我自己的页面"</b>。</p><pre><code>// 1) SameSite：跨站请求不带 Cookie（首选的第一层）
+Set-Cookie: sid=...; HttpOnly; Secure; SameSite=Lax   // 敏感站可用 Strict
+
+// 2) CSRF Token：表单里嵌入随机令牌，服务端比对（外站读不到你的页面）
+&lt;input type=&quot;hidden&quot; name=&quot;csrf&quot; value=&quot;{{ session.csrf_token }}&quot;&gt;
+if request.form[&quot;csrf&quot;] != session[&quot;csrf_token&quot;]: abort(403)
+
+// 3) 校验 Origin / Referer 是否为本站
+// 4) 改状态绝不用 GET；敏感操作二次验证（原密码/短信）
+// 5) 纯 JSON API：要求自定义头（跨站无法在不触发预检的情况下带）</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>所有"改状态"的接口：是 GET 吗？有没有 CSRF Token / Origin 校验？</li><li>Cookie 是否显式设置 SameSite？是否存在 <code>SameSite=None</code> 的必要性？</li><li>Token 是否绑定会话、是否可预测、是否可被其他接口泄露？</li><li>CORS 是否错误地允许任意来源并带凭证（会放大风险，见第 4 课）。</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> 的 CSRF 模块；<b>pikachu</b> 的 CSRF（get/post/token）。练习：对比 Low 与 High 的源码，看 High 加了什么。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「用 POST 就不会有 CSRF」</b>外站表单可以自动提交 POST。</div><div><b>「有 Referer 检查就够」</b>Referer 可能为空，须定义空值策略；仍建议配合 Token。</div><div><b>「CSRF Token 放在 Cookie 里就行」</b>需要服务端比对且来源不可被攻击者设置，否则失效。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【中危】example.test 修改绑定邮箱接口缺少 CSRF 防护（虚构示例）
+<b>目标/接口：</b>POST https://account.example.test/api/email/bind（虚构）
+<b>漏洞概述：</b>绑定邮箱接口仅依赖 Cookie，无 Token，Cookie 无 SameSite；外站页面可诱导已登录用户提交。
+<b>复现步骤：</b>
+1. 登录自己的测试账号，抓取绑定邮箱请求，确认没有 Token、Referer 校验。
+2. 在<b>自己控制的本地页面</b>放置一个指向该接口、字段为自己第二个测试邮箱的表单，用同一浏览器打开并提交。
+3. 账号绑定邮箱被修改（只在自己的测试账号上验证）。
+<b>影响：</b>配合"邮箱找回密码"可接管账号。
+<b>修复建议：</b>加入 CSRF Token；Cookie 设置 SameSite=Lax；绑定需二次验证。
+<b>自评等级：</b>中危~高危（取决于可否接管账号）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP：CSRF 防护速查表</a></li><li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Cookies#samesite_属性">MDN：SameSite</a></li></ul>
+<script>VLAB(Object.assign({"intro":"模拟：你已登录 bank.example。选择\"请求从哪里发出\"、请求方式，以及 Cookie 的 SameSite 设置，看银行服务器是否会执行转账。（纯本地逻辑模拟。）","inputs":[{"id":"o","label":"请求来源","type":"select","options":[["same","bank.example 自己的页面"],["cross","evil.example 的页面（外站）"]]},{"id":"m","label":"方式","type":"select","options":[["POST","POST 表单"],["GET","GET（点链接/加载图片）"]]},{"id":"s","label":"Cookie SameSite","type":"select","options":[["None","None"],["Lax","Lax"],["Strict","Strict"]]}],"safeLabel":"服务端校验 CSRF Token","presets":[["本站页面提交",{"o":"same","m":"POST","s":"Lax"}],["外站 POST，Cookie 为 None",{"o":"cross","m":"POST","s":"None"}],["外站 POST，Cookie 为 Lax",{"o":"cross","m":"POST","s":"Lax"}],["外站 GET 链接，Cookie 为 Lax",{"o":"cross","m":"GET","s":"Lax"}]]},{run(v,safe){var cross=v.o==='cross';var sent=!cross||v.s==='None'||(v.s==='Lax'&&v.m==='GET');var lines=['Cookie 是否被浏览器附带：'+(sent?'是':'否（被 SameSite 拦截）')];if(!sent){return{out:lines.join('\n')+'\n结果：服务器看到未登录请求 → 拒绝',bad:false,note:'✅ SameSite 起了作用。注意：Lax 下"顶级导航的 GET"仍会带 Cookie，所以改状态不能用 GET。'}}
+if(cross&&safe){return{out:lines.join('\n')+'\nCSRF Token：外站拿不到 → 缺失/不匹配\n结果：403 拒绝',bad:false,note:'✅ 双重保险：即使 Cookie 被带上，没有 Token 也不会执行。'}}
+return{out:lines.join('\n')+'\n结果：'+(cross?'已执行转账 100 元（用户毫不知情）':'已执行转账（这是用户自己点的）'),bad:cross,note:cross?'❌ 外站诱导成功：服务器无法区分这是不是用户本意。':'来自本站，正常。'}}}));
+VQUIZ([["防 CSRF 最核心的思路是？",["隐藏接口地址","让服务端能验证请求确实来自本站页面","加验证码在登录页","使用 HTTPS"],1,"HTTPS 不影响浏览器自动带 Cookie。"],["SameSite=Lax 下，哪种跨站请求仍带 Cookie？",["跨站 POST 表单","顶级导航的 GET（点链接）","跨站图片加载","XHR"],1,"这就是\"改状态不用 GET\"的原因。"],["纯 JSON API，必须带自定义头 + CORS 严格，为什么有帮助？",["头越多越安全","跨站带自定义头会触发预检，被 CORS 拦截","服务器喜欢","没帮助"],1,"这依赖 CORS 配置正确，见第 4 课。"]]);</script>
+<div class="nav2"><a href="v03-access.html">← 越权：水平 / 垂直 / IDOR</a> <a href="v05-ssrf.html">SSRF 服务端请求伪造 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

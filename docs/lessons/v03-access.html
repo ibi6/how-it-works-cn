@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>越权：水平 / 垂直 / IDOR · 图解互联网基本功</title><meta name="description" content="少了一道「这是不是你的」检查"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 3/15</span><h1>越权：水平 / 垂直 / IDOR</h1><p class="lead">少了一道「这是不是你的」检查</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>越权（访问控制失效）是指：用户做了本不该被允许的事——看了别人的数据（水平越权 / IDOR），或用了更高权限的功能（垂直越权）。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">酒店刷卡电梯：认证 = 你有房卡（证明你是住客）；授权 = 房卡只能到你那一层。IDOR 就是"房卡能进电梯，但电梯没检查你要去的楼层"。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>"登录了"≠"有权限"。许多接口只验证了前者。越权在 OWASP Top 10 2021 中排名第一，因为它是<b>逻辑缺失</b>，扫描器很难发现。</p><div class="card ctype"><h4>水平越权 / IDOR</h4><p>同级别用户之间互相访问。IDOR（不安全的直接对象引用）指接口直接用客户端传来的 ID 取对象。</p><pre><code>// 有漏洞：只验证登录，不验证归属
+@login_required
+def get_order(order_id):
+    return db.orders.get(order_id)      // 谁的订单都给</code></pre></div><div class="card ctype"><h4>垂直越权</h4><p>低权限用户调用高权限功能。前端隐藏了按钮，但接口没校验角色。</p><pre><code>@app.route(&quot;/admin/users/delete&quot;)   // 没有 @admin_required
+def delete_user(uid): ...</code></pre></div><div class="card ctype"><h4>多步流程越权</h4><p>直接请求流程的后一步，绕过前面的审批/支付检查。</p><pre><code>// 第 3 步&quot;确认发货&quot;接口只检查登录，不检查第 2 步&quot;已付款&quot;状态</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>垂直越权到管理功能；批量读取/修改全站用户敏感信息（身份证、手机号、订单）。</span></div><div class="l-高"><b>高</b><span>水平越权可读取或修改他人隐私、资金相关数据。</span></div><div class="l-中"><b>中</b><span>只能读取非敏感数据，或需要极难猜测的 ID。</span></div><div class="l-x"><b>决定等级的因素</b><span>数据敏感度、读还是写、是否可批量、是否需要登录。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>每个接口、每次访问、服务端都做授权；默认拒绝</b>。</p><pre><code>// 对象级：查询时就带上属主条件
+def get_order(order_id):
+    order = db.orders.get(order_id, owner=current_user.id)
+    if order is None: abort(404)       // 既不存在也无权 → 统一返回，防止探测
+    return order
+
+// 功能级：集中式的权限装饰器/中间件，路由默认要求权限
+@require_role(&quot;admin&quot;)
+def delete_user(uid): ...
+
+// 不要信任客户端传来的 role / userId / isAdmin 字段
+// ID 用不可预测的 UUID 只是加分项，不能代替授权</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>列出所有"带 ID 的接口"，逐个问：服务端有没有把这个 ID 和当前用户关联校验？</li><li>有没有接受客户端传来 <code>userId</code>/<code>role</code> 这类字段的写接口（批量赋值/Mass Assignment）？</li><li>管理接口是否与普通接口隔离，权限校验是集中还是靠各处手写？</li><li>测试方法（在授权范围内用两个自己的测试账号）：A 的资源用 B 的会话访问，看返回。</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>pikachu</b> 的"越权"模块（水平/垂直）；<b>WebGoat</b> 的 Insecure Direct Object References；<b>DVWA</b> 的 Authorisation Bypass。重点练习"用两个账号互相测"的思路。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「前端隐藏了就没人能调」</b>抓包或直接构造请求，完全不经过前端。</div><div><b>「登录就有权限」</b>认证与授权是两件事。</div><div><b>「隐藏的接口地址别人不知道」</b>靠隐蔽性不是安全；前端代码、文档、日志都能暴露地址。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 订单详情接口水平越权（虚构示例）
+<b>目标/接口：</b>GET https://shop.example.test/api/orders/{id}（虚构）
+<b>漏洞概述：</b>接口只校验登录，未校验订单归属，可通过修改 id 读取其他用户订单（姓名、手机号、地址）。
+<b>复现步骤：</b>
+1. 注册两个测试账号 A、B，分别各下一单，记下订单号 a、b。
+2. 以 A 的会话请求 /api/orders/b，返回 B 的订单详情。
+3. <b>仅使用自己的两个账号验证</b>，未遍历或读取任何真实用户数据。
+<b>影响：</b>订单号为自增整数，理论上可被批量遍历，涉及全部用户的收货信息。
+<b>修复建议：</b>查询时加入属主条件；非属主返回 404；订单号改用不可预测标识作为附加措施。
+<b>自评等级：</b>高危（涉及个人敏感信息，可批量）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html">OWASP：授权速查表</a></li><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html">OWASP：IDOR 防护</a></li><li><a href="https://owasp.org/Top10/A01_2021-Broken_Access_Control/">OWASP Top 10 A01 访问控制失效</a></li></ul>
+<script>VLAB(Object.assign({"intro":"你是用户<b>小明</b>（普通用户）。选一个请求，分别在\"服务端有授权检查/没有\"两种情况下看结果。数据全部是页面内的假数据。","inputs":[{"id":"r","label":"请求","type":"select","options":[["o101","GET /api/orders/101（小明的）"],["o103","GET /api/orders/103（小红的）"],["o104","GET /api/orders/104（小刚的）"],["adm","GET /admin/users（管理接口）"]]}],"safeLabel":"服务端做授权检查","presets":[]},{run(v,safe){var O={o101:['小明','键盘'],o103:['小红','手机'],o104:['小刚','耳机']};if(v.r==='adm'){if(safe)return{out:'HTTP 403 Forbidden\n{"error":"需要管理员角色"}',bad:false,note:'✅ 功能级授权：角色不足被拒绝。'};return{out:'HTTP 200 OK\n[{"id":1,"name":"小明","phone":"138****"},{"id":2,"name":"管理员"}…]',bad:true,note:'❌ 垂直越权：普通用户拿到了管理数据。"前端没有按钮"不等于"接口没人能调"。'}}
+var o=O[v.r];var mine=o[0]==='小明';if(safe&&!mine)return{out:'HTTP 404 Not Found',bad:false,note:'✅ 对象级授权：非本人订单一律当不存在，也不泄露"该订单是否存在"。'};return{out:'HTTP 200 OK\n{"id":"'+v.r.slice(1)+'","owner":"'+o[0]+'","item":"'+o[1]+'"}',bad:!mine,note:mine?'这是自己的订单，正常。':'❌ 水平越权（IDOR）：小明看到了别人的订单。'}}}));
+VQUIZ([["\"订单号用随机 UUID，所以不需要权限检查\"。对吗？",["对，猜不到就安全","不对，ID 会泄露、被分享，授权才是根本","对，除非有人爆破","不对，但 UUID 没任何帮助"],1,"不可猜测是加分项，但链接分享、日志、Referer 都可能泄露 ID。"],["哪个是垂直越权？",["小明读小红的订单","普通用户调用删除用户接口","小明改自己的昵称","管理员读订单"],1,"垂直 = 跨越角色层级。"],["接口对越权请求，推荐返回？",["403 并说明\"该订单属于别人\"","404 / 统一的无权限响应，不泄露信息","200 空对象","500"],1,"说明\"属于别人\"会泄露资源存在性。"]]);</script>
+<div class="nav2"><a href="v02-sqli.html">← SQL 注入</a> <a href="v04-csrf.html">CSRF 跨站请求伪造 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

@@ -1,0 +1,44 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弱口令与认证缺陷 · 图解互联网基本功</title><meta name="description" content="大门装了锁，但钥匙是 123456，而且可以试无数次"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 13/15</span><h1>弱口令与认证缺陷</h1><p class="lead">大门装了锁，但钥匙是 123456，而且可以试无数次</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>认证缺陷指：网站在"确认你是谁"的环节有薄弱点——允许弱口令、无限尝试登录、重置流程可被滥用、会话管理不当，使账号容易被他人接管。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">家门有锁（需要密码），但密码设成"1234"，而且你可以一直试，没有人拦；忘记钥匙时找物业"重置"，物业只问你"姓什么"。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>认证是一条链：<b>设置密码 → 登录 → 找回密码 → 会话维持 → 登出</b>，任何一环弱，整体就弱。</p><div class="card ctype"><h4>弱口令与无限制登录</h4><p>允许常见弱密码；对登录失败没有限速、没有锁定、没有告警。</p><pre><code>// 有漏洞
+if check_password(user, pwd): login()   // 无次数限制、无延迟</code></pre></div><div class="card ctype"><h4>找回密码缺陷</h4><p>令牌可预测、不过期、可重复使用；重置链接用 Host 头拼接；"验证码"随响应返回。</p><pre><code>token = md5(user.id + time())   // 可预测</code></pre></div><div class="card ctype"><h4>会话与凭证管理</h4><p>登录前后会话 ID 不变（会话固定）；登出不使服务端会话失效；密码明文/弱哈希存储；Cookie 无 Secure/HttpOnly。</p><pre><code>// 有漏洞：存储
+user.password = md5(pwd)   // 快速哈希，泄露后易还原</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>管理员账号弱口令、默认口令：直接接管后台。</span></div><div class="l-高"><b>高</b><span>普通账号可批量被撞库/爆破；重置流程缺陷导致任意账号接管。</span></div><div class="l-中"><b>中</b><span>缺少 MFA、会话策略弱，增加风险但需配合其他条件。</span></div><div class="l-x"><b>决定等级的因素</b><span>被接管账号的权限、是否可规模化、是否有风控。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>强口令策略 + 限速风控 + 多因素 + 安全的重置 + 正确的会话管理</b>。</p><pre><code>// 1) 口令：长度优先（≥ 8~12），拒绝常见弱口令/已泄露口令，不强制奇怪的复杂规则
+// 2) 存储：慢哈希（bcrypt / scrypt / Argon2）+ 每用户随机盐
+pwd_hash = argon2.hash(pwd)
+
+// 3) 登录：按账号 + IP 限速、渐进延迟、异常告警、必要时验证码；统一的错误信息，不区分&quot;账号不存在/密码错&quot;
+
+// 4) 重置：高熵随机令牌、一次性、15–30 分钟过期、服务端存哈希；成功后使所有会话失效
+
+// 5) 会话：登录后更换会话 ID；登出服务端销毁；Cookie 设 Secure / HttpOnly / SameSite
+// 6) 提供 MFA（TOTP/Passkey）；管理后台强制 MFA 并限制来源 IP</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>注册/改密接口是否有口令策略？是否检查常见弱口令？</li><li>登录是否限速？错误信息是否统一？</li><li>找回密码令牌：生成方式、长度、有效期、是否一次性、是否与用户绑定？</li><li>密码如何存储？会话登录后是否更换 ID？登出后是否真正失效？默认口令是否在部署文档中出现过？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> 的 Brute Force（只在本机练习限速/锁定的缺失与修复，别用来攻击任何真实站点）；<b>pikachu</b> 的暴力破解模块；<b>WebGoat</b> 的 Authentication Flaws。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「强制特殊字符就等于强口令」</b>P@ssw0rd 复杂但常见；长口令短语更好。</div><div><b>「加验证码就够了」</b>验证码可能被绕过或打码平台破解，仍需限速与风控。</div><div><b>「内部后台不用 MFA」</b>后台是最有价值的目标。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 管理后台登录无速率限制且接受弱口令（虚构示例）
+<b>目标/接口：</b>POST https://admin.example.test/login（虚构）
+<b>漏洞概述：</b>后台登录接口无次数限制、无验证码，错误信息区分账号不存在与密码错误。
+<b>复现步骤：</b>
+1. 用自己的测试账号，连续提交少量（如 10 次）错误密码，均返回统一的处理时间，未触发锁定或验证码。
+2. 账号不存在与密码错误返回不同提示，可用于枚举。
+3. <b>没有进行任何大规模尝试</b>，仅以少量请求证明缺少限制。
+<b>影响：</b>攻击者可自动化猜解后台账号口令，导致后台接管。
+<b>修复建议：</b>限速与锁定、MFA、统一错误信息、弱口令拦截。
+<b>自评等级：</b>高危（后台入口、无防护）；若没有弱口令实证，可降为中危。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP：认证速查表</a></li><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html">OWASP：忘记密码速查表</a></li><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">OWASP：口令存储速查表</a></li></ul>
+<script>VLAB(Object.assign({"intro":"输入一个密码，看\"口令策略\"的效果，再看\"登录限速\"在不同尝试次数下的表现。（只是本地计算。）","inputs":[{"id":"pw","label":"密码","value":"123456"},{"id":"n","label":"一分钟内连续尝试登录次数","type":"number","value":"50"}],"safeLabel":"强策略 + 限速锁定","presets":[["常见弱口令",{"pw":"123456","n":"50"}],["较长的口令短语",{"pw":"correct horse battery staple","n":"3"}],["短但\"复杂\"",{"pw":"P@ss1","n":"200"}]]},{run(v,safe){var weak=['123456','password','qwerty','111111','12345678','admin','admin123','P@ss1','abc123'];var pw=v.pw,n=Math.max(0,Math.floor(Number(v.n)));var lines=[];var bad=false;if(!safe){lines.push('口令策略：不限制（任何密码都接受）');lines.push('登录限速：无 → '+n+' 次尝试全部处理');bad=weak.indexOf(pw)>=0||n>10;return{out:lines.join('\n'),bad:bad,note:bad?'❌ 弱口令 + 无限速：自动化猜解成本几乎为零。':'参数看起来温和，但缺少防护意味着随时可以自动化。'}}
+var okpw=pw.length>=10&&weak.indexOf(pw)<0;lines.push('口令策略：'+(okpw?'通过（长度 ≥ 10 且不在常见弱口令列表）':'拒绝：太短或属于常见弱口令'));var allowed=Math.min(n,5);lines.push('登录限速：前 5 次放行，之后锁定并告警 → 本分钟实际处理 '+allowed+' 次');lines.push('错误信息统一为："账号或密码错误"');return{out:lines.join('\n'),bad:false,note:'✅ 即使有人想猜，也被限速；设置弱口令的人被拦截。'}}}));
+VQUIZ([["以下哪种口令策略更符合当前推荐实践？",["必须含大小写数字符号，8 位","长度优先 + 拒绝常见/已泄露口令","每 30 天强制改密","不设策略"],1,"NIST 建议长度与泄露口令检查优先，不推荐强制定期更换。"],["存储密码应使用？",["MD5","SHA-256 一次","bcrypt/Argon2 + 盐","Base64"],2,"要慢、要加盐。"],["登录错误信息应当？",["区分\"账号不存在\"与\"密码错误\"","统一为\"账号或密码错误\"","显示尝试次数剩余","什么都不显示"],1,"防止账号枚举。"]]);</script>
+<div class="nav2"><a href="v12-logic.html">← 业务逻辑漏洞</a> <a href="v14-leak.html">敏感信息泄露 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

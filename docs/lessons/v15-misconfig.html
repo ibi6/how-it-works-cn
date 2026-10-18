@@ -1,0 +1,42 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>安全配置错误 · 图解互联网基本功</title><meta name="description" content="产品本身没问题，是&quot;没拧紧&quot;的螺丝"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 15/15</span><h1>安全配置错误</h1><p class="lead">产品本身没问题，是"没拧紧"的螺丝</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>安全配置错误是指：系统、框架、云服务、Web 服务器在部署时使用了不安全的默认值、遗漏了加固步骤，或开启了不必要的功能。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">新买的保险箱，出厂密码是 0000，说明书说"请自行修改"，你没改；窗户装了锁，但一直开着。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>常见于运维与部署环节，也是 OWASP Top 10 的常客。<b>特点：不需要写复杂利用，只要"配置没改"。</b></p><div class="card ctype"><h4>默认与调试</h4><p>默认账号密码、示例应用、调试接口（如监控面板）、管理控制台暴露在公网。</p><pre><code>admin / admin       示例页面 /examples/       /actuator/*（未鉴权）</code></pre></div><div class="card ctype"><h4>过宽的权限与跨域</h4><p>对象存储桶公开读写；CORS 允许任意来源并带凭证；数据库端口对公网开放；服务账号权限过大。</p><pre><code>Access-Control-Allow-Origin: 反射 Origin
+Access-Control-Allow-Credentials: true</code></pre></div><div class="card ctype"><h4>缺少加固与未更新</h4><p>缺少安全响应头；TLS 配置弱；目录列表开启；组件有已知漏洞未升级。</p><pre><code>Options +Indexes   // 目录列表
+缺少：Content-Security-Policy / X-Content-Type-Options / HSTS</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>管理控制台未鉴权、存储桶公开导致大规模数据泄露。</span></div><div class="l-高"><b>高</b><span>默认口令的后台、数据库公网暴露。</span></div><div class="l-中"><b>中</b><span>缺少安全头、目录列表、低风险信息暴露。</span></div><div class="l-x"><b>决定等级的因素</b><span>暴露的资产价值、是否可直接利用、是否需要认证。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>安全基线 + 自动化检查 + 最小开放</b>。</p><pre><code>// 1) 建立基线：镜像/服务器模板加固后再发布（关调试、改默认口令、删示例）
+// 2) 最小开放：安全组/防火墙默认拒绝，管理端口仅内网/VPN
+// 3) 存储桶与云资源：默认私有，权限最小化，定期审计
+// 4) 响应头：
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+Content-Security-Policy: default-src 'self'
+// 5) CORS：精确白名单，勿反射 Origin；带凭证时尤其严格
+// 6) 依赖与组件：软件物料清单 + 漏洞订阅 + 定期升级
+// 7) 配置即代码 + CI 扫描（IaC 检查），变更评审</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>部署清单：默认账号是否修改？示例/调试端点是否移除？</li><li>云控制台：存储桶、数据库、安全组是否有公开项？</li><li>HTTP：响应头、CORS、Cookie 属性、TLS 版本。</li><li>组件版本：与已知漏洞库（如 CVE）对照；是否有升级计划？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>WebGoat</b>、<b>pikachu</b> 的部分模块，或自己用 Docker 起一个常见中间件，逐项对照加固清单（只在本机，绑 127.0.0.1）。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「内网所以不用管」</b>内网一旦有入口，配置缺陷就是放大器。</div><div><b>「默认配置是官方推荐的所以安全」</b>默认值常为易用而非安全。</div><div><b>「扫一遍就一劳永逸」</b>配置会漂移，需要持续检查。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 对象存储桶公开可列目录（虚构示例）
+<b>目标/接口：</b>https://static-bucket.example.test/（虚构）
+<b>漏洞概述：</b>存储桶允许匿名列出对象，包含用户上传的发票文件名。
+<b>复现步骤：</b>
+1. 以匿名方式访问桶根地址，返回对象列表。
+2. 仅查看列表的前几项文件名，用于证明；<b>未下载任何文件</b>。
+<b>影响：</b>若对象可读，将泄露用户发票与个人信息。
+<b>修复建议：</b>关闭公共访问；通过签名 URL 提供下载；开启访问日志。
+<b>自评等级：</b>高危。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://owasp.org/Top10/A05_2021-Security_Misconfiguration/">OWASP Top 10 A05 安全配置错误</a></li><li><a href="https://developer.mozilla.org/zh-CN/docs/Web/Security">MDN：HTTP 安全头</a></li></ul>
+<script>VLAB({"type":"checklist","intro":"下面是一份虚构的\"上线前检查清单\"。勾选表示<b>已修复</b>，观察剩余风险分与暴露面变化。","items":[["生产环境仍开启 debug，错误页显示堆栈",3,"信息泄露"],["管理后台使用默认账号 admin/admin",5,"后台被接管"],["对象存储桶对所有人可读",5,"数据泄露"],["CORS 反射任意 Origin 且允许带凭证",4,"跨站读取数据"],["Web 目录开启目录列表",2,"暴露备份文件"],["数据库端口对公网开放",5,"直接被连接/猜解"],["缺少 HSTS / nosniff / CSP 等响应头",1,"降低纵深防御"],["依赖组件有已知高危漏洞未升级",4,"已知漏洞被利用"]]});
+VQUIZ([["以下哪个是安全配置错误？",["SQL 拼接","S3 存储桶对所有人可读","XSS","弱算法"],1,"这是\"配置\"而非代码逻辑。"],["为什么要\"配置即代码\"？",["为了好看","可评审、可复现、可自动扫描","为了省钱","没有原因"],1,"手工配置容易漏、难审计。"],["CORS 反射 Origin 并允许凭证，风险是？",["无","任意网站可代表登录用户读取响应","只是慢","只影响日志"],1,"见第 4 课。"]]);</script>
+<div class="nav2"><a href="v14-leak.html">← 敏感信息泄露</a> <a href="vulns.html">回到目录 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

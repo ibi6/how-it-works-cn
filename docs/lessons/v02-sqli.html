@@ -1,0 +1,54 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SQL 注入 · 图解互联网基本功</title><meta name="description" content="输入被拼进 SQL，数据变成了指令"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 2/15</span><h1>SQL 注入</h1><p class="lead">输入被拼进 SQL，数据变成了指令</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>SQL 注入是指：程序把用户输入直接拼接进 SQL 语句文本，导致输入里的内容被数据库当作"指令"的一部分执行。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你在点餐单上写"一份炒饭"。如果服务员不加思考地把整张单子大声念给后厨，而你写的是"一份炒饭；另外把今天的收入全给我"，后厨就可能真的照做。问题不在厨师，在于"点单内容"与"指令"没有分开。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>数据库收到的是一串文本，它自己要<b>解析</b>这串文本。拼接让"用户的数据"与"开发者的结构"混在同一串文本里，解析器无法区分。</p><div class="card ctype"><h4>登录场景</h4><p>输入影响了条件逻辑。</p><pre><code>// 有漏洞：字符串拼接
+sql = &quot;SELECT * FROM users WHERE name='&quot; + name + &quot;' AND pwd='&quot; + pwd + &quot;'&quot;
+// 当 name 里出现单引号，就能提前结束字符串，改写后面的条件</code></pre></div><div class="card ctype"><h4>数字/排序场景</h4><p>没有引号也一样，数字位置同样可被拼接。</p><pre><code>sql = &quot;SELECT * FROM goods WHERE id=&quot; + request.id + &quot; ORDER BY &quot; + request.sort
+// 注意：ORDER BY 的列名、表名无法参数化，必须用白名单</code></pre></div><div class="card ctype"><h4>二次注入</h4><p>输入第一次被安全地存下，但之后被程序取出再拼接进另一条 SQL。</p><pre><code>// 注册时安全入库（用了参数化）
+// 但后台导出功能：
+sql = &quot;SELECT * FROM log WHERE user='&quot; + stored_name + &quot;'&quot;   // 取出后又拼接</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>能读取全库（用户表、密码哈希、订单）、篡改或删除数据；某些数据库配置下还可能进一步控制服务器。</span></div><div class="l-高"><b>高</b><span>只能读取部分表，或认证绕过（不输密码登录任意账号）。</span></div><div class="l-中"><b>中</b><span>仅能造成报错、信息泄露（库名、版本）。</span></div><div class="l-x"><b>决定等级的因素</b><span>① 数据库账号权限 ② 能读到什么数据 ③ 是否需要登录 ④ 是否影响他人数据。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>代码与数据分离——参数化查询（预编译）</b>。</p><pre><code>// 正确：占位符，输入永远只是&quot;值&quot;
+cursor.execute(&quot;SELECT * FROM users WHERE name=%s AND pwd_hash=%s&quot;, (name, hash))
+
+// ORM 也要小心原生拼接
+User.objects.filter(name=name)                 // 安全
+User.objects.raw(&quot;... WHERE name='%s'&quot; % name)  // 又拼接了！
+
+// 无法参数化的位置（表名/列名/排序方向）：白名单
+ALLOWED = {&quot;price&quot;, &quot;created_at&quot;}
+if sort not in ALLOWED: sort = &quot;created_at&quot;
+
+// 纵深：数据库账号最小权限（应用账号不能 DROP、不能读无关表）；错误信息不回显</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>搜索所有执行 SQL 的地方：看有没有字符串 <code>+</code>、<code>format</code>、<code>f"..."</code>、<code>%</code> 拼接。</li><li>ORM 的 <code>raw</code> / <code>execute</code> / <code>extra</code> / <code>Sequelize.query</code> 是重点。</li><li>ORDER BY、表名、列名、LIMIT 是否做了白名单或强转数字？</li><li>应用数据库账号是否是 root / DBA？错误页是否把 SQL 报错原样返回？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> 的 SQL Injection（含 Blind），Low → High 对比源码；<b>pikachu</b> 的数字型/字符型/搜索型注入；<b>WebGoat</b> 的 SQL Injection 系列课。<i>不要对任何非自己搭建的站点尝试。</i></p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「用了 ORM 就不会有注入」</b>ORM 的原生 SQL 接口、排序字段、动态过滤同样会拼接。</div><div><b>「过滤 select、union 等关键字」</b>黑名单易被绕过，且常误伤正常内容。</div><div><b>「内部系统不用管」</b>内网一旦失守，注入就是最短的数据窃取路径。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 订单查询接口 id 参数 SQL 注入（虚构示例）
+<b>目标/接口：</b>GET https://shop.example.test/api/orders?id=（虚构）
+<b>漏洞概述：</b>id 参数在服务端被拼接进 SQL；传入不匹配的引号时接口返回数据库语法错误。
+<b>复现步骤：</b>
+1. 登录测试账号，访问 /api/orders?id=1，返回自己的订单。
+2. 将 id 改为 1 后接一个单引号，接口返回 500 及数据库语法错误信息。
+3. 改为 1 后接恒等式条件，返回条数与原先不同，证明条件被拼入 SQL。<b>到此为止</b>：未读取任何其他用户的数据，未尝试提取库内容。
+<b>影响：</b>可进一步读取订单与用户表（需遵守规则，未验证）。
+<b>修复建议：</b>改用参数化查询；应用数据库账号降权；生产环境关闭 SQL 报错回显。
+<b>自评等级：</b>高危（无需特殊权限；影响面为全库，未实际读取）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">OWASP：SQL 注入防护速查表</a></li><li><a href="06-sqli.html">本站第 6 课：参数化查询</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个<b>假的</b>登录表，只存在于本页面的内存里。试试正常登录、输入带单引号的名字，对比两种写法。","inputs":[{"id":"n","label":"用户名","value":"alice"},{"id":"p","label":"密码","value":"wrong"}],"safeLabel":"使用参数化查询","presets":[["正确密码",{"n":"alice","p":"alice123"}],["名字里有单引号（O'Brien 式）",{"n":"o'brien","p":"x"}],["教科书例子：恒真条件",{"n":"x' OR '1'='1","p":"x"}]]},{run(v,safe){var U=[['alice','alice123'],['bob','bob456'],["o'brien",'ob789']];var n=v.n,p=v.p;if(safe){var ok=U.filter(function(r){return r[0]===n&&r[1]===p});return{out:'执行：SELECT * FROM users WHERE name=? AND pwd=?\n参数：['+JSON.stringify(n)+', '+JSON.stringify(p)+']\n结果：'+(ok.length?'登录成功：'+ok[0][0]:'0 行，登录失败'),bad:false,note:'✅ 输入永远只是"值"，包括带引号的合法名字（O\'Brien 能正常登录）。'}}
+var sql="SELECT * FROM users WHERE name='"+n+"' AND pwd='"+p+"'";var res;var hit=null;
+if(/'\s*or\s+'?\w+'?\s*=\s*'?\w+/i.test(n)){res='全部 '+U.length+' 行（条件恒真）→ 以第一行 alice 的身份登录';hit='bypass'}
+else if(/--/.test(n)){res='注释截断了密码条件 → 仅按用户名匹配';hit='bypass'}
+else if((n.split("'").length-1)%2===1){res='💥 SQL 语法错误：引号不匹配（连正常的人名都登不上了）';hit='err'}
+else{var ok2=U.filter(function(r){return r[0]===n&&r[1]===p});res=ok2.length?'1 行，登录成功':'0 行，登录失败'}
+return{out:'执行：'+sql+'\n结果：'+res,bad:!!hit,note:hit==='bypass'?'❌ 输入改变了 SQL 的逻辑结构：没有密码也登录了。':hit==='err'?'❌ 输入破坏了语句结构。这是注入存在的信号之一：合法输入也会报错。':'正常输入时看不出区别。'}}}));
+VQUIZ([["下面哪种写法能真正防住 SQL 注入？",["把单引号替换成两个单引号","参数化查询（预编译）","在前端校验输入","只允许字母数字"],1,"转义是补丁、容易漏；参数化让数据库在语法层面区分代码与数据。"],["ORDER BY 后的列名能参数化吗？",["能，占位符就行","不能，应该用白名单","不用管，ORM 会处理","用 trim 去空格"],1,"占位符只能代表\"值\"，不能代表标识符，所以用白名单映射。"],["发现输入单引号会报 SQL 语法错误，说明？",["数据库坏了","很可能存在拼接，需要进一步确认并报告","网站有防火墙","没有问题"],1,"这是常见的信号，但是否可利用还要在授权范围内谨慎确认，不要读取真实数据。"]]);</script>
+<div class="nav2"><a href="v01-xss.html">← XSS 跨站脚本</a> <a href="v03-access.html">越权：水平 / 垂直 / IDOR →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

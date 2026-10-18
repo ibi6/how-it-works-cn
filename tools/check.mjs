@@ -1,6 +1,25 @@
 import {chromium} from 'playwright-core';
 const base=process.argv[2];const shots=process.argv[3];
-const pages=['index.html',...['01-url','02-https','03-session','04-cors','05-index','06-sqli','src-1-scope','src-2-vulns','src-3-lab','src-4-report','src-5-roadmap'].map(x=>`lessons/${x}.html`)];
+import fs from 'node:fs';
+const VL=JSON.parse(fs.readFileSync(new URL('./vulns-list.json',import.meta.url)));
+const pages=['index.html','lessons/vulns.html',...VL.map(x=>`lessons/${x}.html`),...['01-url','02-https','03-session','04-cors','05-index','06-sqli','src-1-scope','src-2-vulns','src-3-lab','src-4-report','src-5-roadmap'].map(x=>`lessons/${x}.html`)];
+async function vulnCheck(pg,errs,name){
+ const labtype=await pg.evaluate(()=>!!document.querySelector('#lab .ckl'));
+ if(labtype){const n=await pg.$$eval('#lab .ckl input',x=>x.length);for(const c of await pg.$$('#lab .ckl input'))await c.check();if(!(await pg.textContent('#lab')).includes('全部修复'))errs.push('checklist');}
+ else{
+  const sets=[];const pc=await pg.$$('#lab .ctl button');
+  for(let i=0;i<pc.length;i++)sets.push(async()=>{await (await pg.$$('#lab .ctl button'))[i].click()});
+  if(!pc.length){const opts=await pg.$$eval('#lab select:first-of-type option',o=>o.map(x=>x.value));for(const o of opts)sets.push(async()=>{await pg.selectOption('#lab select',o)})}
+  let badOff=0;
+  for(const mode of [false,true])for(const f of sets){await f();await pg.setChecked('#safe',mode);const o=await pg.textContent('#lo');if(!o.trim())errs.push('empty out');const bad=(await pg.getAttribute('.verdict','class')).includes('bad');
+   if(mode&&bad)errs.push('safe mode still bad: '+o.slice(0,60));if(!mode&&bad)badOff++}
+  if(!badOff)errs.push('no unsafe case demonstrates bug');
+  await pg.setChecked('#safe',false)}
+ const qb=await pg.$$('#quiz .card');for(const c of qb){await (await c.$('button[data-v="0"]')||await c.$('button')).click()}
+ if(!(await pg.textContent('#quiz')).includes('得分'))errs.push('quiz score');
+ if(!(await pg.textContent('#rpt')).includes('复现步骤'))errs.push('report');
+ for(const id of ['s2','s3','s4','s5','s6','s7','s8','s9','s10','s11'])if(!(await pg.$('#'+id)))errs.push('missing section '+id);
+}
 const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
 let bad=0;
 for(const dark of [false,true]){
@@ -22,7 +41,11 @@ for(const dark of [false,true]){
    'src-3-lab':async()=>{await pg.selectOption('#lab','webgoat');await pg.click('#ck input')},
    'src-4-report':async()=>{await pg.selectOption('#q2','3')},
    'src-5-roadmap':async()=>{await pg.click('#rm input')}}[name];
+  if(/^v\d\d-/.test(name)){await vulnCheck(pg,errs,name)}
   if(act)await act();
+  if(!(await pg.title()))errs.push('no title');
+  const a11y=await pg.evaluate(()=>{const e=[];if(document.documentElement.lang!=='zh-CN')e.push('lang');document.querySelectorAll('input,select,textarea').forEach(i=>{if(!(i.closest('label')||i.getAttribute('aria-label')||(i.id&&document.querySelector('label[for="'+i.id+'"]'))))e.push('unlabeled '+(i.id||i.type))});document.querySelectorAll('button').forEach(b=>{if(!b.textContent.trim()&&!b.getAttribute('aria-label'))e.push('empty button')});document.querySelectorAll('iframe').forEach(f=>{if(!f.title&&!f.id)e.push('iframe no title')});if(document.querySelectorAll('h1').length!==1)e.push('h1 count');return e});
+  if(a11y.length)errs.push('a11y '+a11y.join(','));
   await pg.waitForTimeout(300);
   if(shots&&!dark&&['index','01-url','05-index','06-sqli','src-4-report','04-cors'].includes(name))await pg.screenshot({path:`${shots}/${name}.png`,fullPage:false});
   // horizontal overflow on mobile checked below

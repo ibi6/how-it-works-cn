@@ -1,0 +1,46 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>路径穿越（目录遍历） · 图解互联网基本功</title><meta name="description" content="../ 让你走出了本该待着的文件夹"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 8/15</span><h1>路径穿越（目录遍历）</h1><p class="lead">../ 让你走出了本该待着的文件夹</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>路径穿越是指：程序用用户给的文件名拼出文件路径来读写文件，用户在文件名里用 <code>../</code>（返回上一级目录）跳出了预期目录，读取或写入了其他位置的文件。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你被允许去图书馆"借阅区"的书架拿书。书单上写"上一层的上一层的……保险室里的文件"，管理员没检查路径就去拿了。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>根因：<b>拼接路径后没有验证最终位置仍在允许的目录内</b>。</p><div class="card ctype"><h4>下载/预览接口</h4><p>常见于 /download?file=xxx。</p><pre><code>// 有漏洞
+path = &quot;/var/www/files/&quot; + request.args[&quot;file&quot;]
+return read(path)
+// file 含 ../ 时，实际路径会跳出 files 目录</code></pre></div><div class="card ctype"><h4>解压（Zip Slip）</h4><p>压缩包内的文件名含 ../，解压时写到了目标目录之外。</p><pre><code>for entry in zip.entries:
+    write(&quot;/data/unzip/&quot; + entry.name, entry.data)   // entry.name 可含 ../</code></pre></div><div class="card ctype"><h4>编码绕过的错误防御</h4><p>只在编码前做字符串替换，服务器后续再解码一次。</p><pre><code>file = file.replace(&quot;../&quot;, &quot;&quot;)   // 替换一次容易被绕过，且需考虑 URL 解码顺序</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-高"><b>高</b><span>读取源码、配置文件、密钥、数据库连接串，进而扩大攻击面。</span></div><div class="l-严重"><b>严重</b><span>写入型穿越（上传/解压）可覆盖任意文件，导致代码执行。</span></div><div class="l-中"><b>中</b><span>仅能读取无敏感内容的系统文件。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>先规范化（解析 ../、符号链接），再检查结果是否仍在基目录下；或干脆不用用户提供的路径</b>。</p><pre><code>// 1) 最佳：不让用户传路径，传 ID，服务端映射到文件
+file = db.files.get(file_id)
+
+// 2) 必须用文件名时：规范化后校验前缀
+base = os.path.realpath(&quot;/var/www/files&quot;)
+target = os.path.realpath(os.path.join(base, name))
+if os.path.commonpath([base, target]) != base: abort(403)
+
+// 3) 用框架提供的安全函数（如 send_from_directory），并校验解压路径
+// 4) 进程用最小权限运行，敏感文件不可读（纵深防御）</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>所有读写文件、读取模板、解压、下载接口：路径里有没有用户可控片段？</li><li>校验是在"规范化之后"吗？URL 编码、双重编码、符号链接、Windows 反斜杠是否处理？</li><li>进程账号能读哪些敏感文件？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>WebGoat</b> 的 Path Traversal；<b>pikachu</b> 的"不安全文件下载"；<b>DVWA</b> 的 File Inclusion（相关的路径问题）。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「把 ../ 替换成空字符串就行」</b>一次性替换可被嵌套写法绕过，应基于规范化结果判断。</div><div><b>「只读功能没什么危害」</b>配置文件里的密钥一旦泄露，影响远超读文件本身。</div><div><b>「Windows 才有这问题」</b>所有操作系统都有。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 附件下载接口路径穿越（虚构示例）
+<b>目标/接口：</b>GET https://doc.example.test/download?file=（虚构）
+<b>漏洞概述：</b>file 参数直接拼接到基目录，未做规范化校验。
+<b>复现步骤：</b>
+1. 下载自己上传的附件，确认请求形式为 file=文件名。
+2. 在授权范围内，将 file 改为指向上一级目录下<b>一个明确的、非敏感的</b>测试文件（由厂商提供或自己在测试环境创建的标记文件），成功读取。
+3. 没有尝试读取任何系统敏感文件。
+<b>影响：</b>可读取服务器上基目录以外的文件，如配置文件（未验证）。
+<b>修复建议：</b>ID 映射或规范化后校验；最小权限运行。
+<b>自评等级：</b>高危。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://owasp.org/www-community/attacks/Path_Traversal">OWASP：路径穿越</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个\"文件下载\"功能，服务器上有一份<b>假的</b>文件系统。基目录是 <code>/var/www/files</code>。","inputs":[{"id":"f","label":"file 参数","value":"a.txt"}],"safeLabel":"规范化后校验仍在基目录内","presets":[["正常文件",{"f":"a.txt"}],["向上一层",{"f":"../app/config.ini"}],["多级向上",{"f":"../../../etc/passwd"}]]},{run(v,safe){var FS={'/var/www/files/a.txt':'你好，这是 a.txt','/var/www/files/b.txt':'这是 b.txt','/var/www/app/config.ini':'[db]\npassword=FAKE-PASSWORD  （假）','/etc/passwd':'root:x:0:0:… （假）'};function norm(p){var out=[];p.split('/').forEach(function(s){if(s===''||s==='.')return;if(s==='..')out.pop();else out.push(s)});return'/'+out.join('/')}
+var raw=v.f;try{raw=decodeURIComponent(raw)}catch(e){}var full=norm('/var/www/files/'+raw);if(safe&&full.indexOf('/var/www/files/')!==0)return{out:'解析后的真实路径：'+full+'\n403：不在允许的目录内',bad:false,note:'✅ 规范化后再检查：../ 已被计算在内。'};var c=FS[full];var escaped=full.indexOf('/var/www/files/')!==0;return{out:'拼接并规范化后的路径：'+full+'\n'+(c?'内容：\n'+c:'404 文件不存在'),bad:escaped&&!!c,note:escaped&&c?'❌ 读到了基目录外的文件。':'正常读取。'}}}));
+VQUIZ([["下列哪种防御最可靠？",["把输入中的 ../ 替换为空","规范化路径后检查是否在基目录下，或用 ID 映射","只允许小写字母","在前端检查"],1,"替换容易被\"....//\"之类绕过；规范化后校验才是对\"最终位置\"的检查。"],["Zip Slip 指的是？",["压缩包太大","压缩包内文件名含 ../，解压时写出目录","压缩算法漏洞","密码破解"],1,"写入型路径穿越，危害更大。"],["为什么还要最小权限运行？",["更快","万一被穿越，也读不到敏感文件","为了日志","没有原因"],1,"纵深防御。"]]);</script>
+<div class="nav2"><a href="v07-cmdi.html">← 命令注入</a> <a href="v09-xxe.html">XXE：XML 外部实体注入 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

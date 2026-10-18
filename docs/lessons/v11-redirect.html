@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>开放重定向 · 图解互联网基本功</title><meta name="description" content="你的网站成了骗子的&quot;跳板&quot;"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 11/15</span><h1>开放重定向</h1><p class="lead">你的网站成了骗子的"跳板"</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>开放重定向是指：网站根据 URL 参数（如 <code>?next=</code>）把用户跳转到任意地址，而没有校验目标是否可信。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">小区门卫指路："您要去哪？我带您去。"骗子问："带我去 XX 小区的假保安亭。"因为是门卫亲自带的，访客就以为那里也是小区的一部分。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>登录后跳回原页面、退出登录、单点登录回调、短链、"点击离开本站"提示页都会用到跳转参数。</p><div class="card ctype"><h4>直接使用参数</h4><p>最常见。</p><pre><code>// 有漏洞
+next = request.args.get(&quot;next&quot;)
+return redirect(next)</code></pre></div><div class="card ctype"><h4>弱校验</h4><p>只检查"是否以 / 开头"或"是否包含本站域名"。</p><pre><code>if next.startswith(&quot;/&quot;): redirect(next)
+// &quot;//evil.example&quot; 也以 / 开头，会被浏览器当作协议相对的外部地址</code></pre></div><div class="card ctype"><h4>白名单写得不严</h4><p>用 "包含" 或 "以...开头" 判断域名，被拼接的域名绕过。</p><pre><code>if &quot;example.com&quot; in next: ...   // evil-example.com.attacker.test 也包含</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-中"><b>中</b><span>钓鱼：链接域名是可信站点，用户容易相信；配合伪造登录页窃取凭证。</span></div><div class="l-高"><b>高</b><span>配合 OAuth 回调 redirect_uri 校验不严，可导致授权码/令牌泄露 → 账号接管。</span></div><div class="l-低"><b>低</b><span>单纯开放跳转，无敏感上下文：很多 SRC 视为低危或不收。</span></div><div class="l-x"><b>决定等级的因素</b><span>是否能与 OAuth/SSO 等敏感流程结合，是否需要用户交互。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>只允许跳转到站内的相对路径，或白名单内的完整地址</b>。</p><pre><code>// 1) 最佳：不接受 URL，只接受一个&quot;页面标识&quot;，服务端映射
+PAGES = {&quot;home&quot;: &quot;/home&quot;, &quot;orders&quot;: &quot;/orders&quot;}
+return redirect(PAGES.get(request.args.get(&quot;to&quot;), &quot;/home&quot;))
+
+// 2) 必须接受路径时：解析后严格检查
+u = urlparse(next)
+if u.scheme or u.netloc or not next.startswith(&quot;/&quot;) or next.startswith(&quot;//&quot;) or &quot;\\&quot; in next:
+    next = &quot;/home&quot;
+
+// 3) 外链跳转：白名单域名 + 中间提示页
+// 4) OAuth：redirect_uri 必须与注册值完全匹配（精确匹配，不用前缀/包含）</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>搜索 <code>redirect</code>、<code>Location</code>、<code>window.location</code> 与参数名 <code>next/url/redirect/return/to</code>。</li><li>校验使用的是"解析后的主机名精确匹配"，还是字符串包含/前缀？</li><li>OAuth/SSO 的回调地址是否精确匹配？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>pikachu</b> 的"URL 重定向"模块；<b>WebGoat</b> 的认证流程课。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「只是跳转，没危害」</b>它让钓鱼链接带着可信域名；与 OAuth 结合更严重。</div><div><b>「包含域名就算校验」</b>域名可被拼接或作为子域/路径出现。</div><div><b>「前端校验就行」</b>攻击者直接构造链接，不经过你的前端。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【低危 / 中危】example.test 登录页 next 参数开放重定向（虚构示例）
+<b>目标/接口：</b>GET https://login.example.test/login?next=（虚构）
+<b>漏洞概述：</b>登录成功后跳转至 next 参数指定的任意 URL。
+<b>复现步骤：</b>
+1. 构造 next 为一个<b>自己控制的、无害的外部页面</b>，用测试账号登录。
+2. 登录成功后浏览器被跳转到该外部页面。
+3. 没有搭建仿冒登录页，没有对他人发送链接。
+<b>影响：</b>可用于钓鱼；是否可与 OAuth 流程结合需厂商评估。
+<b>修复建议：</b>只允许相对路径或白名单；OAuth redirect_uri 精确匹配。
+<b>自评等级：</b>低危~中危（取决于是否与敏感流程结合）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html">OWASP：未经验证的重定向速查表</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个登录成功后的跳转：<code>/login?next=…</code>。输入 next 参数，看服务器返回的 <code>Location</code> 以及用户最终到哪。","inputs":[{"id":"n","label":"next 参数","value":"/home"}],"safeLabel":"只允许站内相对路径","presets":[["站内路径",{"n":"/orders"}],["完整外部网址",{"n":"https://evil.example/fake-login"}],["协议相对地址",{"n":"//evil.example/x"}],["反斜杠写法",{"n":"/\\evil.example"}]]},{run(v,safe){var n=v.n;function final(l){if(/^https?:\/\//i.test(l))return l.replace(/^https?:\/\/([^\/]+).*/i,'$1');if(/^(\/\/|\/\\)/.test(l))return l.replace(/^(\/\/|\/\\)/,'').split('/')[0];return'login.example.com（本站）'}
+if(safe){var ok=/^\/(?![\/\\])/.test(n)&&n.indexOf('\\')<0;var loc=ok?n:'/home';return{out:'Location: '+loc+'\n用户最终到达：login.example.com（本站）',bad:false,note:ok?'✅ 站内相对路径，放行。':'✅ 不符合"站内相对路径"，回退到默认页面。'}}
+var h=final(n);var ext=h.indexOf('本站')<0;return{out:'Location: '+n+'\n用户最终到达：'+h,bad:ext,note:ext?'❌ 用户从可信的 login.example.com 被带到了外部站点：信任被借用。':'正常。'}}}));
+VQUIZ([["判断\"以 / 开头\"就是站内路径，对吗？",["对","不对，// 开头会被当成外部地址","对，除非有 http","看浏览器"],1,"需要同时排除 // 与 /\\ 等写法。"],["开放重定向与什么结合危害最大？",["静态页面","OAuth 回调","404 页面","CSS"],1,"可能导致授权码泄露。"],["最稳妥的设计是？",["接受任意 URL","只接受页面标识，服务端映射","前端判断","加验证码"],1,"不接收 URL。"]]);</script>
+<div class="nav2"><a href="v10-deser.html">← 不安全的反序列化</a> <a href="v12-logic.html">业务逻辑漏洞 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

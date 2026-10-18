@@ -1,0 +1,49 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>XSS 跨站脚本（反射 / 存储 / DOM） · 图解互联网基本功</title><meta name="description" content="数据被当成代码执行在别人的浏览器里"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 1/15</span><h1>XSS 跨站脚本（反射 / 存储 / DOM）</h1><p class="lead">数据被当成代码执行在别人的浏览器里</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>XSS 是指：网站把「不可信的内容」未经处理就输出到页面里，浏览器把它当成了网页代码执行，于是攻击者的脚本以受害者的身份在该网站里运行。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">小区公告栏允许住户贴纸条。如果物业不检查，有人贴一张「纸条」，上面写着「看到本条的人请把家门钥匙放到门口」，并盖上物业的章——大家以为是物业发的，就照做了。XSS 里，「盖物业章」就是脚本借用了网站的身份。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>根因只有一个：<b>输出时没有按"输出位置"做转义</b>。浏览器分不清哪些是网站作者写的结构，哪些是用户提供的文字。按数据"来自哪、落在哪"，分成三种：</p><div class="card ctype"><h4>反射型</h4><p>输入来自当前请求（如 URL 参数），服务端立刻把它拼进响应。只影响点击了特制链接的人。</p><pre><code>// 伪代码：搜索页
+render(&quot;&lt;h2&gt;搜索结果：&quot; + request.query[&quot;q&quot;] + &quot;&lt;/h2&gt;&quot;)</code></pre></div><div class="card ctype"><h4>存储型</h4><p>输入被保存进数据库（评论、昵称、工单），之后每个查看该页面的人都会中招，危害最大。</p><pre><code>// 伪代码：评论列表
+for c in db.comments:
+    render(&quot;&lt;li&gt;&quot; + c.content + &quot;&lt;/li&gt;&quot;)   // 直接拼接</code></pre></div><div class="card ctype"><h4>DOM 型</h4><p>整个过程发生在前端：前端 JS 读取 URL / 存储里的数据，用 innerHTML 等"当作 HTML"的接口写入页面，服务器甚至看不到。</p><pre><code>// 前端 JS
+const name = new URLSearchParams(location.search).get(&quot;name&quot;);
+document.getElementById(&quot;hi&quot;).innerHTML = &quot;你好，&quot; + name;</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-高"><b>高</b><span>存储型且出现在高访问页面（后台、客服工单）：可在管理员浏览器里以其身份操作，等于账号权限被借用。</span></div><div class="l-中"><b>中</b><span>反射型 / DOM 型：需要诱导点击；可伪造页面内容、钓鱼、读取页面上的数据。</span></div><div class="l-低"><b>低</b><span>仅影响自己（Self-XSS）、或页面无敏感数据且有严格 CSP：通常 SRC 不收或低危。</span></div><div class="l-x"><b>决定等级的因素</b><span>① 页面是否带登录态 ② 谁会看到（普通用户/管理员）③ 是否有 HttpOnly、CSP 等缓解 ④ 页面上有什么数据。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>输入校验是辅助，输出转义是主力，CSP 是兜底</b>。</p><pre><code>// 1) 服务端模板：使用自动转义的模板引擎（默认开启，不要关）
+//    {{ comment.content }}        → 自动转义
+//    {{ comment.content | safe }}  → 危险：只给可信内容用
+
+// 2) 前端：需要&quot;当文字&quot;写入时，用 textContent，而不是 innerHTML
+document.getElementById(&quot;hi&quot;).textContent = &quot;你好，&quot; + name;
+
+// 3) 确需富文本：用成熟的净化库白名单过滤（如 DOMPurify），不要自己写正则
+el.innerHTML = DOMPurify.sanitize(userHtml);
+
+// 4) 响应头兜底
+Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'
+Set-Cookie: sid=...; HttpOnly; Secure; SameSite=Lax</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>全局搜索危险接口：<code>innerHTML</code>、<code>outerHTML</code>、<code>document.write</code>、<code>v-html</code>、<code>dangerouslySetInnerHTML</code>、模板里的 <code>|safe</code> / <code>raw</code>。</li><li>每处用户可控数据，追问：它最终落在 HTML 正文、属性、JS 字符串还是 URL？是否用了对应场景的转义？</li><li>富文本功能是否使用白名单净化？链接是否限制了 <code>javascript:</code> 协议？</li><li>检查 CSP 是否真的有效（不要 <code>unsafe-inline</code> 一把梭），Cookie 是否 HttpOnly。</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> 的 XSS (Reflected / Stored / DOM) 三个模块，把安全等级从 Low 调到 High，对照源码看每一级多了什么转义；<b>pikachu</b> 有 XSS 全套；<b>WebGoat</b> 有交互式讲解。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「过滤掉 script 标签就行」</b>脚本能通过事件属性、伪协议等许多途径执行，黑名单永远列不完。</div><div><b>「HttpOnly 能防 XSS」</b>它只防止脚本读 Cookie，脚本依然能以你的身份发请求。</div><div><b>「只有搜索框才有 XSS」</b>昵称、头像 URL、文件名、HTTP 头里的内容、错误提示都可能被输出。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【中危】example.test 个人资料页昵称存储型 XSS（虚构示例）
+<b>目标/接口：</b>https://app.example.test/profile （虚构目标，已在授权范围内）
+<b>漏洞概述：</b>个人资料页的"昵称"字段保存后在好友列表页被原样输出到 HTML，未做转义。
+<b>复现步骤：</b>
+1. 使用测试账号 A 登录，进入"设置—昵称"。
+2. 在昵称中输入一段无害的标记文本，例如加粗标签，保存。
+3. 使用测试账号 B 打开好友列表，发现 A 的昵称被渲染为加粗，说明输入被当作 HTML 解析（概念验证仅用无害标记，未执行任何脚本，未接触他人数据）。
+<b>影响：</b>好友列表是高访问页面；若将标记替换为可执行脚本，可在任意查看者的会话中执行操作。
+<b>修复建议：</b>服务端模板对昵称做 HTML 转义；启用 CSP；Cookie 增加 HttpOnly。
+<b>自评等级：</b>中危（需用户查看页面触发，页面含登录态）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP：XSS 防护速查表</a></li><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html">OWASP：DOM XSS 防护速查表</a></li><li><a href="https://developer.mozilla.org/zh-CN/docs/Web/HTTP/CSP">MDN：CSP</a></li></ul>
+<script>VLAB(Object.assign({"intro":"左边输入一段「用户留言」。选择它被放进页面的位置，再切换「输出转义」。结果显示在<b>禁用脚本的沙箱</b>里，安全；重点看浏览器如何<i>解析</i>它。","inputs":[{"id":"t","label":"用户输入","value":"<b>你好</b> <i>世界</i>"},{"id":"ctx","label":"输出位置","type":"select","options":[["body","HTML 正文"],["attr","HTML 属性（value=\"…\"）"]]}],"safeLabel":"输出时转义","presets":[["普通文字",{"t":"你好，世界"}],["带标记的文字",{"t":"<b>加粗</b>"}],["含双引号（属性场景）",{"t":"x\" style=\"background:red"}]]},{run(v,safe){var t=safe?esc(v.t):v.t;var html=v.ctx==='attr'?'<input value="'+t+'" style="width:90%">':'<p>留言：'+t+'</p>';var changed=esc(v.t)!==v.t;var bad=!safe&&changed;return{out:html,html:html,bad:bad,note:bad?'❌ 用户输入里的特殊字符改变了页面结构：数据变成了代码。真实场景里，把标记换成可执行脚本，就是 XSS。':(changed?'✅ 特殊字符被转义，只当文字显示。':'输入里没有特殊字符，两种方式看起来一样——所以只测"正常输入"永远发现不了问题。')}}}));
+VQUIZ([["下面哪个做法最能从根上防住存储型 XSS？",["在前端用正则过滤 script 关键字","输出到页面时按位置做转义（或用自动转义模板）","把 Cookie 设成 HttpOnly 就够了","禁止用户输入 < 和 >"],1,"输入黑名单容易被绕过，且影响正常内容；HttpOnly 只能限制偷 Cookie，脚本仍能代用户操作。"],["DOM 型 XSS 和反射型最大的区别是？",["危害更大","服务器可能完全看不到恶意数据，问题在前端 JS","只存在于旧浏览器","需要登录才能触发"],1,"DOM 型的数据流在浏览器内：来源（location 等）到汇点（innerHTML 等）。"],["输出到 HTML 属性时，必须特别处理的字符是？",["引号","中文","空格以外的一切","什么都不用"],0,"属性值靠引号闭合，输入里的引号会\"跳出\"属性，开启新的属性。所以属性场景要转义引号并始终给属性值加引号。"]]);</script>
+<div class="nav2"><a href="vulns.html">← 漏洞详解目录</a> <a href="v02-sqli.html">SQL 注入 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

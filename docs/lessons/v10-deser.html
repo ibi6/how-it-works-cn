@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>不安全的反序列化 · 图解互联网基本功</title><meta name="description" content="把别人寄来的&quot;压缩包&quot;直接还原成了程序里的对象"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 10/15</span><h1>不安全的反序列化</h1><p class="lead">把别人寄来的"压缩包"直接还原成了程序里的对象</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>序列化是把对象变成可存储/传输的字节或文本；反序列化是把它还原。不安全的反序列化是指：对不可信的数据执行还原，而还原过程会触发代码（构造器、魔术方法），数据被当成了"指令"。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你收到一个"组装家具"的快递：包裹里只是零件还好；如果里面是带说明书的"自动机器人，开箱即运行"，你一拆封它就动了。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>某些语言的原生序列化格式（Java 序列化、Python pickle、PHP unserialize、.NET BinaryFormatter 等）在还原时可以<b>实例化任意类并调用其方法</b>。程序里已有的类组合起来（称"gadget 链"）就可能产生危险行为。</p><div class="card ctype"><h4>把序列化对象放进 Cookie/参数</h4><p>客户端可控 → 可篡改。</p><pre><code>// 有漏洞：Python
+user = pickle.loads(base64.b64decode(request.cookies[&quot;user&quot;]))</code></pre></div><div class="card ctype"><h4>篡改数据本身</h4><p>即使没有代码执行，反序列化出来的字段（如 role）也被信任。</p><pre><code>user = deserialize(cookie)
+if user.role == &quot;admin&quot;: ...   // 数据来自客户端，没有签名</code></pre></div><div class="card ctype"><h4>概念示例</h4><p>序列化数据里指定了类名，反序列化器照做。</p><pre><code>{&quot;__class__&quot;: &quot;TempCleaner&quot;, &quot;path&quot;: &quot;/tmp/x&quot;}   // 数据决定了&quot;创建什么对象&quot;</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>远程代码执行（gadget 链可用时）。</span></div><div class="l-高"><b>高</b><span>权限提升：篡改序列化数据里的身份字段。</span></div><div class="l-中"><b>中</b><span>拒绝服务（超大/深度嵌套的对象）。</span></div><div class="l-x"><b>决定等级的因素</b><span>序列化格式是否能触发代码、依赖库里是否有可用 gadget、数据来源是否可被用户控制。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>不要对不可信数据使用原生反序列化；用纯数据格式 + 校验 + 签名</b>。</p><pre><code>// 1) 使用 JSON 等&quot;只有数据、没有类型&quot;的格式
+user = json.loads(body)
+
+// 2) 严格的结构校验（schema），只接受预期字段与类型
+validate(user, schema={&quot;name&quot;: str, &quot;role&quot;: [&quot;user&quot;]})
+
+// 3) 需要放在客户端的数据 → 服务端签名（HMAC）并验证
+if not hmac_ok(data, sig): abort(400)
+// 更好：只在客户端放不透明的会话 ID，数据存服务端
+
+// 4) 如果必须使用原生反序列化：类白名单（如 Java ObjectInputFilter）、隔离、低权限
+// 5) 升级依赖，移除不必要的高风险库</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>搜索：<code>pickle.loads</code>、<code>unserialize</code>、<code>ObjectInputStream</code>、<code>BinaryFormatter</code>、<code>yaml.load</code>（非 safe_load）。</li><li>反序列化的数据来自哪里？Cookie、参数、消息队列、缓存、上传文件？</li><li>是否有完整性校验（签名）？是否有类型白名单？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>WebGoat</b> 的 Insecure Deserialization 课；<b>pikachu</b> 的 PHP 反序列化。务必在本地容器内，只理解原理，不碰真实系统。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「Base64 后就看不懂了」</b>编码不是加密，更不是签名。</div><div><b>「内部系统间传输没事」</b>消息队列/缓存被污染时同样危险。</div><div><b>「加黑名单就好」</b>gadget 层出不穷，黑名单追不上。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【严重】example.test 会话 Cookie 使用不安全反序列化（虚构示例）
+<b>目标/接口：</b>Cookie: prefs=...（虚构）
+<b>漏洞概述：</b>服务端用原生反序列化还原 Cookie，且无签名。
+<b>复现步骤：</b>
+1. 解码 Cookie，发现是原生序列化格式，其中含有 role 字段。
+2. 修改自己测试账号 Cookie 中的无害字段（如界面主题）并重放，服务器接受并回显新值，证明无完整性校验。
+3. <b>未尝试代码执行</b>；仅说明原理上可能。
+<b>影响：</b>可篡改身份字段；在存在 gadget 时可能导致代码执行（未验证）。
+<b>修复建议：</b>改用 JSON + 签名；或会话数据存服务端。
+<b>自评等级：</b>高危~严重（保守按高危提交，说明潜在影响）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html">OWASP：反序列化速查表</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个<b>玩具</b>反序列化器：数据里可带 <code>__class__</code> 字段指定要创建的类（概念演示，不执行任何真实代码，类的\"效果\"只是打印一行说明）。","inputs":[{"id":"d","label":"客户端 Cookie（JSON）","type":"textarea","value":"{\"name\":\"小明\",\"role\":\"user\"}"}],"safeLabel":"纯数据 JSON + 字段白名单 + 签名校验","presets":[["正常数据",{"d":"{\"name\":\"小明\",\"role\":\"user\"}"}],["篡改身份字段",{"d":"{\"name\":\"小明\",\"role\":\"admin\"}"}],["指定要创建的类（概念）",{"d":"{\"__class__\":\"TempCleaner\",\"path\":\"/tmp/x\"}"}]]},{run(v,safe){var o;try{o=JSON.parse(v.d)}catch(e){return{out:'解析失败：不是合法 JSON',bad:false,note:'格式错误被拒绝。'}}
+if(safe){return{out:'签名校验：该 Cookie 没有有效签名 → 拒绝\n（即使有签名，也只接受字段 name/role，且 role 只允许 user）',bad:false,note:'✅ 数据不被信任为"指令"，也不信任其中的身份字段。'}}
+var log=[];if(o.__class__==='TempCleaner'){log.push('→ 按数据中的类名创建对象 TempCleaner(path='+o.path+')');log.push('→ 对象的析构逻辑被触发：（模拟）删除 '+o.path);return{out:log.join('\n'),bad:true,note:'❌ 数据决定了"创建什么对象、触发什么逻辑"：这就是反序列化危险的本质。真实世界的利用更复杂，但原理相同。'}}
+log.push('→ 还原用户：'+o.name+'，角色：'+o.role);return{out:log.join('\n'),bad:o.role==='admin',note:o.role==='admin'?'❌ 客户端自己改了 role，服务器照单全收：即使没有代码执行，也是越权。':'正常。'}}}));
+VQUIZ([["最稳妥的做法是？",["用 pickle 并加过滤","不对不可信数据使用原生反序列化，改用 JSON + 校验 + 签名","压缩数据","Base64 编码"],1,"Base64 只是编码，不是保护。"],["Cookie 里放 JSON {role:\"user\"} 且没签名，问题是？",["没问题","可被客户端篡改成 admin","Cookie 太长","Cookie 太短"],1,"客户端可控的数据必须签名或不放。"],["gadget 链指的是？",["一种加密","程序里已有类的组合，在反序列化时触发危险行为","一种漏洞扫描","一种网络设备"],1,"攻击者不需要自己写代码，利用现成的类即可。"]]);</script>
+<div class="nav2"><a href="v09-xxe.html">← XXE：XML 外部实体注入</a> <a href="v11-redirect.html">开放重定向 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

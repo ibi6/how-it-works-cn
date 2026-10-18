@@ -1,0 +1,43 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>XXE：XML 外部实体注入 · 图解互联网基本功</title><meta name="description" content="XML 解析器被&quot;邀请&quot;去读它不该读的东西"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 9/15</span><h1>XXE：XML 外部实体注入</h1><p class="lead">XML 解析器被"邀请"去读它不该读的东西</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>XXE 是指：应用用默认配置的 XML 解析器解析用户提供的 XML，而解析器支持"外部实体"功能，于是可以被诱导去读取本地文件或发出网络请求。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">你收到一份表格，里面写着"此处内容请参见抽屉里的文件 X"，秘书老老实实去抽屉取出文件、抄进表格再回给你。XML 的 DTD / 实体就是这种"参见"机制。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>XML 标准里允许在文档开头用 DTD 定义"实体"，实体可指向外部资源（本地文件、URL）。很多解析器<b>默认开启</b>这个特性，而业务根本用不到。</p><div class="card ctype"><h4>接收 XML 的接口</h4><p>SOAP、旧式 API、SVG/Office 文档解析、SAML 登录。</p><pre><code>// 有漏洞：Java 默认配置
+DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+Document doc = db.parse(userInputStream);</code></pre></div><div class="card ctype"><h4>概念示例（教科书级）</h4><p>文档里声明一个实体指向本地文件，再在内容里引用它。解析器会把文件内容替换进去。</p><pre><code>&lt;!DOCTYPE order [ &lt;!ENTITY x SYSTEM &quot;file:///etc/hostname&quot;&gt; ]&gt;
+&lt;order&gt;&lt;item&gt;&amp;x;&lt;/item&gt;&lt;/order&gt;</code></pre></div><div class="card ctype"><h4>间接场景</h4><p>上传 docx/xlsx/svg，后台用 XML 解析处理，文件里藏着 DTD。</p><pre><code>// 看起来是&quot;图片/文档&quot;功能，底层是 XML 解析</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-高"><b>高</b><span>读取服务器本地文件（配置、密钥）。</span></div><div class="l-高"><b>高</b><span>SSRF：解析器代发请求访问内网。</span></div><div class="l-中"><b>中</b><span>"十亿笑声"：实体嵌套膨胀导致拒绝服务。</span></div><div class="l-x"><b>决定等级的因素</b><span>能否回显、能读哪些文件、是否有网络出站限制。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>禁用 DTD 与外部实体</b>（业务通常完全不需要）。</p><pre><code>// Java
+factory.setFeature(&quot;http://apache.org/xml/features/disallow-doctype-decl&quot;, true);
+factory.setFeature(&quot;http://xml.org/sax/features/external-general-entities&quot;, false);
+factory.setFeature(&quot;http://xml.org/sax/features/external-parameter-entities&quot;, false);
+factory.setXIncludeAware(false); factory.setExpandEntityReferences(false);
+
+# Python：使用 defusedxml 代替标准 xml 库
+from defusedxml.ElementTree import fromstring
+
+// 其他：能用 JSON 就不用 XML；升级解析库；限制出站网络；最小权限</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>项目里哪些地方接收/解析 XML（含 SOAP、SAML、SVG、Office 文档、RSS）？</li><li>解析器的安全特性是否被显式设置？框架版本的默认值是什么？</li><li>解析器是否来自 defusedxml 等安全封装？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>WebGoat</b> 的 XXE 课；<b>pikachu</b> 的 XXE；<b>DVWA</b> 暂无，可使用 WebGoat。靶场请只绑 127.0.0.1。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「我没用 XML，所以没事」</b>你的依赖或文件格式可能在用。</div><div><b>「XML 解析器默认就安全」</b>很多语言的默认并不安全，需显式关闭。</div><div><b>「只读文件，没什么」</b>配置与密钥一旦泄露后果很大。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 订单导入接口 XXE（虚构示例）
+<b>目标/接口：</b>POST https://erp.example.test/api/import（虚构）
+<b>漏洞概述：</b>导入接口使用默认配置的 XML 解析器，接受 DOCTYPE 声明。
+<b>复现步骤：</b>
+1. 提交含有一个"内部实体"定义（只是普通文本替换）的 XML，响应中出现替换后的文本，证明 DTD 被处理。
+2. 不尝试外部实体读取文件；说明理论上可通过外部实体读取本地文件。
+<b>影响：</b>若启用外部实体，可读取服务器文件、发起内网请求（未验证）。
+<b>修复建议：</b>禁用 DTD 与外部实体；升级解析库。
+<b>自评等级：</b>高危（以内部实体验证 DTD 被处理为依据，保守评估）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html">OWASP：XXE 防护速查表</a></li></ul>
+<script>VLAB(Object.assign({"intro":"一个<b>假的</b> XML 订单解析器，里面有一份假文件系统。左边输入 XML。（解析逻辑是本页面内的简化模拟。）","inputs":[{"id":"x","label":"XML 输入","type":"textarea","value":"<order><item>书</item></order>"}],"safeLabel":"禁用 DTD / 外部实体","presets":[["正常订单",{"x":"<order><item>书</item></order>"}],["声明外部实体（概念）",{"x":"<!DOCTYPE order [ <!ENTITY x SYSTEM \"file:///etc/hostname\"> ]>\n<order><item>&x;</item></order>"}]]},{run(v,safe){var FS={'/etc/hostname':'prod-web-01  （假）'};var ent={};var re=/<!ENTITY\s+(\w+)\s+SYSTEM\s+"file:\/\/([^"]+)"\s*>/g,m;var hasDtd=/<!DOCTYPE/i.test(v.x);if(safe&&hasDtd)return{out:'解析错误：DOCTYPE 被禁止',bad:false,note:'✅ 禁用 DTD：业务用不到，也就没有了攻击面。'};while((m=re.exec(v.x)))ent[m[1]]=m[2];var body=v.x.replace(/<!DOCTYPE[\s\S]*?\]>/,'');var item=/<item>([\s\S]*?)<\/item>/.exec(body);var val=item?item[1]:'';var used=false;val=val.replace(/&(\w+);/g,function(a,n){if(ent[n]!==undefined){used=true;return FS[ent[n]]||'(读取失败)'}return a});return{out:'解析结果：item = '+val,bad:used,note:used?'❌ 解析器读取了本地文件并把内容放进了结果：这就是 XXE 的核心。':'正常解析。'}}}));
+VQUIZ([["防 XXE 最根本的措施是？",["过滤 file:// 字符串","禁用 DTD / 外部实体解析","加 WAF","只接收小文件"],1,"关闭特性比过滤字符串可靠。"],["以下哪个场景可能涉及 XML 解析？",["SAML 登录","SVG 处理","Office 文档导入","以上都可能"],3,"XML 无处不在，需要盘点。"],["能用 JSON 就不用 XML，是因为？",["JSON 更快","JSON 没有实体机制","JSON 更小","没有区别"],1,"减少攻击面。"]]);</script>
+<div class="nav2"><a href="v08-traversal.html">← 路径穿越</a> <a href="v10-deser.html">不安全的反序列化 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

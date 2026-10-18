@@ -59,3 +59,7 @@ cd docs && python3 -m http.server 8000   # 或任意静态服务器，打开 htt
 
 ## 许可
 [MIT](LICENSE)
+
+## 常见漏洞详解（SRC 专题）
+
+`docs/lessons/vulns.html` 下 15 课：XSS、SQL 注入、越权/IDOR、CSRF、SSRF、文件上传、命令注入、路径穿越、XXE、反序列化、开放重定向、业务逻辑、认证缺陷、信息泄露、安全配置错误。统一结构（定义、类比、成因、危害、防御、审计、本地实验、靶场、测验、误区、报告模板）。页面由 `tools/gen-vulns.mjs` 从 `tools/vulns/*.mjs` 生成；`tools/check.mjs` 做端到端检查。仅教学与授权范围内使用，所有演示为浏览器本地假数据。

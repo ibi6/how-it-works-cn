@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>不安全的文件上传 · 图解互联网基本功</title><meta name="description" content="「头像」被当成了「程序」来处理"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%234f46e5%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27white%27%3E%E5%9B%BE%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="../assets/style.css"><script src="../assets/common.js"></script><script src="../assets/vuln.js"></script></head><body>
+<header class="top"><div><a class="logo" href="../index.html">图解<b>互联网</b>基本功</a><span class="sp"></span><a href="vulns.html" style="font-size:14px">漏洞详解目录</a><button id="theme" aria-label="切换主题">☾ 深色</button></div></header><main>
+<span class="tag">漏洞详解 6/15</span><h1>不安全的文件上传</h1><p class="lead">「头像」被当成了「程序」来处理</p>
+<nav class="chips" aria-label="本课结构"><a href="#s1">定义</a><a href="#s2">类比</a><a href="#s3">成因</a><a href="#s4">危害</a><a href="#s5">防御</a><a href="#s6">审计视角</a><a href="#s7">本地实验</a><a href="#s8">靶场</a><a href="#s9">小测验</a><a href="#s10">误区</a><a href="#s11">报告模板</a></nav>
+<div class="tldr"><b>一句话定义</b>文件上传漏洞是指：网站对上传文件的类型、内容、文件名、存放位置和访问方式控制不当，导致不可信文件被服务器当作可执行内容处理，或造成其他危害。</div>
+<div class="note">本课只讲原理、防御与审计思路。所有演示都是浏览器里的假数据模拟；不提供针对真实目标的攻击载荷清单，也请只在<b>自己搭建的环境或获得授权的范围</b>内验证。</div>
+<h2 id="s2">🏠 生活类比</h2><div class="ana">快递站收包裹。只看包裹上写的"内容：书"就收下并放进能自动运转的机器房，结果包裹里是一台会自己开动的机器。正确做法：开箱检查、换成统一标签、放进只读仓库。</div>
+<h2 id="s3">🔍 成因：问题到底出在哪</h2><p>风险来自四个环节：<b>类型判断、文件名、存放位置、访问方式</b>，任何一个信任了客户端，都会出问题。</p><div class="card ctype"><h4>只信客户端声明</h4><p>只检查前端 JS 的扩展名，或只看请求里的 Content-Type（这两个都由客户端提供，可任意伪造）。</p><pre><code>// 有漏洞
+if request.files[&quot;f&quot;].content_type in [&quot;image/png&quot;,&quot;image/jpeg&quot;]:
+    save(request.files[&quot;f&quot;], &quot;/var/www/html/uploads/&quot; + original_name)</code></pre></div><div class="card ctype"><h4>保留原文件名 / 可执行目录</h4><p>文件被存进 Web 目录，且以用户给的扩展名保存，服务器可能按扩展名当脚本执行；还可能有路径穿越（见第 8 课）。</p><pre><code>// 文件名 shell.php 被保存到 Web 根目录，Web 服务器会执行 .php</code></pre></div><div class="card ctype"><h4>其他危害</h4><p>SVG/HTML 文件含脚本 → 存储型 XSS；超大文件/压缩炸弹 → 拒绝服务；图片处理库漏洞；文件内容里的敏感信息（EXIF 位置）。</p><pre><code>// 允许上传 svg 并从主域名下提供访问 → 同源的 XSS</code></pre></div>
+<h2 id="s4">💥 危害与等级</h2><div class="sev"><div class="l-严重"><b>严重</b><span>上传的脚本在服务器执行（远程代码执行）。</span></div><div class="l-高"><b>高</b><span>存储型 XSS（上传 HTML/SVG 且同源访问）；覆盖任意文件。</span></div><div class="l-中"><b>中</b><span>文件内容校验缺失导致存储垃圾、存储炸弹、隐私信息泄露。</span></div><div class="l-x"><b>决定等级的因素</b><span>文件能否被执行或解释、存放域名、访问是否需要认证。</span></div></div>
+<h2 id="s5">🛡 防御与修复</h2><p>修复原则：<b>不信客户端、重命名、隔离存放、不可执行</b>。</p><pre><code>// 1) 扩展名白名单（而不是黑名单）
+ALLOWED = {&quot;png&quot;,&quot;jpg&quot;,&quot;jpeg&quot;,&quot;gif&quot;,&quot;pdf&quot;}
+
+// 2) 检查真实内容：读文件头（魔数）并用图像库重新编码
+img = Image.open(f); img.verify(); img = img.convert(&quot;RGB&quot;); img.save(out)
+
+// 3) 重命名为随机名，扩展名由服务端根据检测出的类型决定
+name = uuid4().hex + &quot;.png&quot;
+
+// 4) 存放在 Web 根目录之外或对象存储；
+//    通过单独的、无脚本执行能力的域名（如 static-cdn.example）提供，
+//    并设置：Content-Disposition: attachment 或 X-Content-Type-Options: nosniff
+// 5) 限制大小与数量；杀毒；上传目录禁止执行权限</code></pre>
+<h2 id="s6">🧐 怎么判断自己安全？代码审计视角</h2><ul><li>上传的文件最终存哪里？Web 服务器会不会执行该目录下的文件？</li><li>扩展名与 MIME 的判断依据是客户端还是服务端内容检测？</li><li>文件名是否被保留？有没有路径穿越与特殊字符处理？</li><li>SVG / HTML / PDF 是否允许？从哪个域名访问？同源还是独立域名？</li></ul>
+<h2 id="s7">🧪 本地小实验</h2><div class="card lab" id="lab"></div>
+<h2 id="s8">🎯 本地靶场练习</h2><div class="card"><p>本地靶场：<b>DVWA</b> File Upload（Low→High 对比）；<b>pikachu</b> 的文件上传（客户端检查/MIME/getimagesize）。靶场里 PHP 环境为本机 Docker，不要把上传目录映射到公网。</p><p class="note">靶场安装与 127.0.0.1 绑定方法见 <a href="src-3-lab.html">合法练习环境</a> 一课。</p></div>
+<h2 id="s9">✅ 小测验</h2><div id="quiz"></div>
+<h2 id="s10">⚠ 常见误区</h2><div class="myth"><div><b>「检查了 Content-Type 就行」</b>这个头由客户端设定，随便写。</div><div><b>「黑名单禁止 .php 就安全」</b>扩展名有大小写、双扩展名、其他可执行类型，白名单才可靠。</div><div><b>「图片重新压缩就没事」</b>要保证重新编码输出，且存放访问方式也要隔离。</div></div>
+<h2 id="s11">📝 SRC 报告里怎么描述（虚构示例模板）</h2>
+<p>下面是<b>完全虚构</b>的示例（example.test 不是真实站点）。注意三点：<b>标题含等级与位置</b>、<b>复现步骤最小化且只用自己的账号</b>、<b>说明影响但不扩大验证</b>。写法细则见 <a href="src-4-report.html">漏洞报告与沟通</a>。</p>
+<div class="rpt" id="rpt"><b>标题：</b>【高危】example.test 头像上传未校验真实类型且存放于可执行目录（虚构示例）
+<b>目标/接口：</b>POST https://app.example.test/api/avatar（虚构）
+<b>漏洞概述：</b>头像上传仅校验请求头的 Content-Type，文件以原名保存到 Web 目录下。
+<b>复现步骤：</b>
+1. 在测试账号上传一个内容为纯文本的"演示文件"，将 Content-Type 声明为 image/png，成功。
+2. 访问返回 URL，文本被按原样返回，保存路径含原始文件名，说明未重命名未重新编码。
+3. <b>未上传任何可执行内容</b>，只用纯文本证明校验缺失，并向厂商说明如替换为脚本的潜在影响。
+<b>影响：</b>如目录允许脚本执行，可导致服务器代码执行（需厂商确认，未验证）。
+<b>修复建议：</b>扩展名白名单 + 魔数检测 + 重编码 + 随机命名 + 存放于不可执行位置。
+<b>自评等级：</b>高危（校验缺失 + 可能的执行条件）。</div>
+<div class="ctl"><button id="cp" type="button">复制模板文本</button></div>
+<h2>延伸阅读</h2><ul><li><a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html">OWASP：文件上传安全速查表</a></li></ul>
+<script>VLAB(Object.assign({"intro":"模拟一个头像上传。你可以\"声明\"文件名与类型，以及文件的<b>真实内容类型</b>。（只是字符串逻辑，没有任何真实文件。）","inputs":[{"id":"f","label":"文件名","value":"avatar.png"},{"id":"ct","label":"声明的 Content-Type","type":"select","options":[["image/png","image/png"],["text/plain","text/plain"]]},{"id":"real","label":"文件真实内容","type":"select","options":[["img","真正的 PNG 图片"],["script","一段服务器脚本文本（演示）"]]}],"safeLabel":"白名单 + 内容检测 + 重命名 + 不可执行目录","presets":[["正常图片",{"f":"avatar.png","ct":"image/png","real":"img"}],["声明为图片，实为脚本",{"f":"avatar.png","ct":"image/png","real":"script"}],["双扩展名",{"f":"avatar.php.png","ct":"image/png","real":"script"}],["脚本扩展名",{"f":"run.php","ct":"image/png","real":"script"}]]},{run(v,safe){var ext=(v.f.split('.').pop()||'').toLowerCase();if(!safe){var exec=/\.(php|jsp|asp|aspx)(\.|$)/i.test(v.f);var ok=v.ct==='image/png';if(!ok)return{out:'拒绝：类型不是图片',bad:false,note:'这个检查只看客户端声明的头。'};return{out:'已保存：/var/www/html/uploads/'+v.f+'\nWeb 服务器处理方式：'+(exec&&v.real==='script'?'按脚本执行（模拟）':'按静态文件返回'),bad:v.real==='script',note:v.real==='script'?(exec?'❌ 真实内容是脚本，扩展名又会被服务器执行：这就是任意代码执行。':'❌ 校验被轻易骗过（内容与声明不符）。是否可利用取决于服务器配置，但已是缺陷。'):'正常。'}}
+if(['png','jpg','jpeg','gif'].indexOf(ext)<0)return{out:'拒绝：扩展名不在白名单（'+ext+'）',bad:false,note:'✅ 白名单。'};if(v.real!=='img')return{out:'拒绝：文件头不是图片（内容检测失败）',bad:false,note:'✅ 内容检测：不信任声明。'};return{out:'已保存：/data/uploads/'+Math.random().toString(16).slice(2,14)+'.png（Web 根目录之外，随机命名，经图像库重新编码）',bad:false,note:'✅ 即使有人想伪装，也无法在服务器上执行。'}}}));
+VQUIZ([["仅用前端 JS 检查扩展名，安全吗？",["安全，用户看不到代码","不安全，客户端可以绕过前端","安全，如果用了 HTTPS","取决于浏览器"],1,"任何客户端检查都只是体验优化，不是安全控制。"],["以下哪个存放策略最好？",["原名存到 /var/www/html/uploads","随机名存到 Web 根目录外或对象存储","压缩后放根目录","按用户名建目录放根目录"],1,"随机名 + 非 Web 根目录 + 不可执行。"],["为什么 SVG 上传需要特别小心？",["体积大","SVG 是 XML，可内嵌脚本，在同源下打开就是 XSS","SVG 不是图片","没有风险"],1,"可使用独立域名、CSP 或栅格化再提供。"]]);</script>
+<div class="nav2"><a href="v05-ssrf.html">← SSRF 服务端请求伪造</a> <a href="v07-cmdi.html">命令注入 →</a></div></main><footer>图解互联网基本功 · MIT · 仅供学习与授权范围内的防御/测试 · 所有演示均在浏览器本地模拟，不发出任何真实网络请求</footer></body></html>

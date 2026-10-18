@@ -34,4 +34,12 @@ document.addEventListener('DOMContentLoaded',()=>{
  const lab=()=>b.textContent=root.dataset.theme==='dark'?'☀ 浅色':'☾ 深色';
  b.onclick=()=>{root.dataset.theme=root.dataset.theme==='dark'?'light':'dark';localStorage.setItem('hiw-theme',root.dataset.theme);lab()};lab();
 });
+
+/* 无障碍兜底：给没有可见 label 的控件补 aria-label（取邻近文字） */
+window.addEventListener('load',()=>{document.querySelectorAll('input,select,textarea').forEach(i=>{
+ if(i.type==='hidden'||i.closest('label')||i.getAttribute('aria-label')||i.getAttribute('aria-labelledby')||(i.id&&document.querySelector('label[for="'+i.id+'"]')))return;
+ let t=i.title||i.placeholder||'';
+ if(!t){let p=i.previousSibling;while(p&&!t){t=(p.textContent||'').trim();p=p.previousSibling}}
+ if(!t&&i.parentElement)t=(i.parentElement.textContent||'').trim();
+ i.setAttribute('aria-label',(t||i.id||'输入').replace(/\s+/g,' ').slice(0,30))})});
 })();
